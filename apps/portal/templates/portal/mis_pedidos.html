@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+
+{% block title %}Mis Pedidos - JC Distribuciones{% endblock %}
+
+{% block content %}
+<div class="row mb-3 align-items-center">
+    <div class="col-md-8">
+        <h3 class="fw-bold mb-1"><i class="bi bi-journal-text me-2 text-primary"></i>Historial de Pedidos</h3>
+        <p class="text-muted small mb-0">Seguimiento de compras y estado de comprobantes de <strong>{{ cliente.razon_social }}</strong></p>
+    </div>
+    <div class="col-md-4 text-md-end mt-2 mt-md-0">
+        <a href="{% url 'portal:catalogo' %}" class="btn btn-primary btn-sm fw-bold">
+            <i class="bi bi-plus-lg me-1"></i> Nuevo Pedido
+        </a>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+    <div class="card-body p-0">
+        {% if pedidos %}
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>N° Pedido</th>
+                        <th>Fecha Envío</th>
+                        <th class="text-center">Estado</th>
+                        <th class="text-center">Cant. Items</th>
+                        <th class="text-end">Total Final</th>
+                        <th class="text-center">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for p in pedidos %}
+                    <tr>
+                        <td class="fw-bold text-dark">
+                            <i class="bi bi-file-earmark-text me-1 text-secondary"></i>{{ p.numero_pedido }}
+                        </td>
+                        <td class="small">
+                            {{ p.fecha_envio|date:"d/m/Y H:i"|default:p.fecha_creacion|date:"d/m/Y H:i" }}
+                        </td>
+                        <td class="text-center">
+                            {% if p.estado == 'ENVIADO' %}
+                                <span class="badge bg-warning text-dark"><i class="bi bi-hourglass-split me-1"></i>Enviado</span>
+                            {% elif p.estado == 'EN_REVISION' %}
+                                <span class="badge bg-info text-dark"><i class="bi bi-eye me-1"></i>En Revisión</span>
+                            {% elif p.estado == 'APROBADO' %}
+                                <span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>Aprobado</span>
+                            {% elif p.estado == 'RECHAZADO' %}
+                                <span class="badge bg-danger"><i class="bi bi-x-circle me-1"></i>Rechazado</span>
+                            {% elif p.estado == 'FACTURADO' %}
+                                <span class="badge bg-primary"><i class="bi bi-receipt me-1"></i>Facturado</span>
+                            {% else %}
+                                <span class="badge bg-secondary">{{ p.get_estado_display }}</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-center fw-semibold">
+                            {{ p.items.count }}
+                        </td>
+                        <td class="text-end fw-bold text-success">
+                            ${{ p.monto_total|floatformat:2 }}
+                        </td>
+                        <td class="text-center">
+                            <a href="{% url 'portal:detalle_pedido' p.id %}" class="btn btn-outline-secondary btn-sm">
+                                <i class="bi bi-eye-fill me-1"></i> Ver Detalle
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center py-5">
+            <i class="bi bi-inbox display-3 text-muted mb-3 d-block"></i>
+            <h5 class="text-secondary">No tienes pedidos registrados</h5>
+            <p class="small text-muted mb-3">Los pedidos que envíes desde tu carrito aparecerán aquí.</p>
+            <a href="{% url 'portal:catalogo' %}" class="btn btn-primary fw-bold">
+                <i class="bi bi-shop me-1"></i> Explorar Catálogo
+            </a>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

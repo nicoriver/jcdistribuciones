@@ -1,0 +1,147 @@
+{% extends 'gestion/base_gestion.html' %}
+
+{% block title %}Catálogo de Productos - Panel de Gestión{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="h3 fw-bold mb-0 text-dark"><i class="bi bi-box-seam me-2"></i>Catálogo de Productos y Precios</h2>
+        <p class="text-muted small mb-0">Gestión del catálogo maestro, control de stock y actualización de listas de precio</p>
+    </div>
+    <a href="{% url 'gestion:producto_crear' %}" class="btn btn-primary fw-bold shadow-sm">
+        <i class="bi bi-plus-circle me-1"></i> Nuevo Producto
+    </a>
+</div>
+
+<!-- Filtros de búsqueda -->
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-body p-3">
+        <form method="get" class="row g-2 align-items-center">
+            <div class="col-md-4">
+                <div class="input-group">
+                    <span class="input-group-text bg-white text-muted"><i class="bi bi-search"></i></span>
+                    <input type="text" name="q" value="{{ query }}" class="form-control" placeholder="Buscar por código, código de barras o nombre...">
+                </div>
+            </div>
+            <div class="col-md-2">
+                <select name="categoria" class="form-select">
+                    <option value="">-- Todas las Categorías --</option>
+                    {% for cat in categorias %}
+                    <option value="{{ cat.id }}" {% if categoria_actual == cat.id %}selected{% endif %}>{{ cat.nombre }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <select name="marca" class="form-select">
+                    <option value="">-- Todas las Marcas --</option>
+                    {% for m in marcas %}
+                    <option value="{{ m.id }}" {% if marca_actual == m.id %}selected{% endif %}>{{ m.nombre }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <select name="stock_bajo" class="form-select">
+                    <option value="">-- Todo el Stock --</option>
+                    <option value="1" {% if stock_bajo == '1' %}selected{% endif %}>⚠️ Stock Crítico</option>
+                </select>
+            </div>
+            <div class="col-md-2 d-flex gap-1">
+                <button type="submit" class="btn btn-dark w-100 fw-bold">Filtrar</button>
+                <a href="{% url 'gestion:productos_list' %}" class="btn btn-outline-secondary" title="Limpiar"><i class="bi bi-x-circle"></i></a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Listado de productos -->
+<div class="card border-0 shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Código / Barras</th>
+                        <th>Producto</th>
+                        <th>Categoría / Marca</th>
+                        <th class="text-end">Costo Base</th>
+                        <th class="text-center">Stock / Mínimo</th>
+                        <th>Estado</th>
+                        <th>Precios de Lista</th>
+                        <th class="text-end">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for producto in productos %}
+                    <tr>
+                        <td>
+                            <span class="fw-bold font-monospace text-dark d-block">{{ producto.codigo }}</span>
+                            {% if producto.codigo_barra %}
+                            <small class="text-muted font-monospace"><i class="bi bi-barcode me-1"></i>{{ producto.codigo_barra }}</small>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <strong class="text-dark d-block">{{ producto.nombre }}</strong>
+                            {% if producto.descripcion %}
+                            <small class="text-muted text-truncate d-inline-block" style="max-width: 250px;">{{ producto.descripcion }}</small>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <span class="badge bg-light text-dark border d-block mb-1">{{ producto.categoria.nombre|default:"Sin cat." }}</span>
+                            <small class="text-muted">{{ producto.marca.nombre|default:"Sin marca" }}</small>
+                        </td>
+                        <td class="text-end fw-bold">
+                            ${{ producto.costo|floatformat:2 }}
+                            <small class="d-block text-muted text-nowrap">IVA: {{ producto.alicuota_iva.porcentaje }}%</small>
+                        </td>
+                        <td class="text-center">
+                            {% if producto.controla_stock %}
+                                {% if producto.stock_actual <= producto.punto_reposicion %}
+                                    <span class="badge bg-danger fs-6 px-2 py-1"><i class="bi bi-exclamation-triangle me-1"></i>{{ producto.stock_actual }}</span>
+                                    <small class="d-block text-danger fw-bold">Pto: {{ producto.punto_reposicion }}</small>
+                                {% else %}
+                                    <span class="badge bg-success fs-6 px-2 py-1">{{ producto.stock_actual }}</span>
+                                    <small class="d-block text-muted">Pto: {{ producto.punto_reposicion }}</small>
+                                {% endif %}
+                            {% else %}
+                                <span class="badge bg-secondary">No controla</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if producto.activo %}
+                                <span class="badge bg-success-subtle text-success border border-success-subtle">Activo</span>
+                            {% else %}
+                                <span class="badge bg-secondary-subtle text-secondary border">Inactivo</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <div class="d-flex flex-column gap-1" style="min-width: 140px;">
+                                {% for p_lista in producto.precios_lista.all %}
+                                <div class="d-flex justify-content-between align-items-center small border-bottom pb-1">
+                                    <span class="text-muted me-2">{{ p_lista.lista.nombre }}:</span>
+                                    <strong class="text-dark">${{ p_lista.precio_final|floatformat:2 }}</strong>
+                                </div>
+                                {% empty %}
+                                <span class="text-muted small">Sin precios registrados</span>
+                                {% endfor %}
+                            </div>
+                        </td>
+                        <td class="text-end">
+                            <a href="{% url 'gestion:producto_editar' producto.id %}" class="btn btn-sm btn-outline-primary fw-semibold">
+                                <i class="bi bi-pencil me-1"></i> Editar
+                            </a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="8" class="text-center py-5 text-muted">
+                            <i class="bi bi-box-seam display-4 d-block mb-3 text-secondary"></i>
+                            <p class="fs-5 mb-0">No se encontraron productos en el catálogo.</p>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

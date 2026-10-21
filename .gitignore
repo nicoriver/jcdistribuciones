@@ -1,0 +1,47 @@
+# Virtual environment
+.venv/
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Python cache & temp
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Environment variables & secrets
+.env
+.env.*
+!.env.example
+
+# Database
+*.sqlite3
+*.sqlite3-journal
+*.db
+*.sqlite
+
+# Django media & staticfiles
+media/
+staticfiles/
+
+# Logs
+*.log
+
+# Backups & dumps
+*.bak
+*.dump
+
+# IDE / Editor / OS
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+Thumbs.db
+.DS_Store

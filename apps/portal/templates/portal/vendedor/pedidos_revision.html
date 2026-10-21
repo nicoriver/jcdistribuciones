@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+
+{% block title %}Panel Vendedor - Revisión de Pedidos{% endblock %}
+
+{% block content %}
+<div class="row mb-3 align-items-center">
+    <div class="col-12 col-md-7">
+        <h3 class="fw-bold mb-1 text-dark">
+            <i class="bi bi-phone-vibrate-fill me-2 text-warning"></i>Panel Móvil de Vendedor
+        </h3>
+        <p class="text-muted small mb-0">
+            Vendedor: <strong>{{ vendedor.nombre|default:user.nombre_completo }}</strong>
+        </p>
+    </div>
+    <div class="col-12 col-md-5 text-md-end mt-2 mt-md-0">
+        <a href="{% url 'portal:vendedor_seleccionar_cliente' %}" class="btn btn-warning fw-bold text-dark shadow-sm btn-action-touch">
+            <i class="bi bi-cart-plus-fill me-1"></i> + Tomar Pedido en Calle
+        </a>
+    </div>
+</div>
+
+<!-- FILTROS Y BÚSQUEDA MÓVIL -->
+<div class="card border-0 shadow-sm mb-4 bg-white">
+    <div class="card-body p-3">
+        <form method="get" action="{% url 'portal:vendedor_pedidos' %}" class="row g-2">
+            <div class="col-12 col-sm-6 col-md-5">
+                <input type="text" 
+                       name="q" 
+                       value="{{ query }}" 
+                       class="form-control" 
+                       placeholder="Buscar por cliente, CUIT o pedido...">
+            </div>
+            <div class="col-12 col-sm-4 col-md-4">
+                <select name="estado" class="form-select" onchange="this.form.submit()">
+                    <option value="ENVIADO" {% if estado_filter == 'ENVIADO' %}selected{% endif %}>Enviados (Pendientes)</option>
+                    <option value="EN_REVISION" {% if estado_filter == 'EN_REVISION' %}selected{% endif %}>En Revisión</option>
+                    <option value="APROBADO" {% if estado_filter == 'APROBADO' %}selected{% endif %}>Aprobados</option>
+                    <option value="RECHAZADO" {% if estado_filter == 'RECHAZADO' %}selected{% endif %}>Rechazados</option>
+                    <option value="" {% if estado_filter == '' %}selected{% endif %}>-- Todos los Estados --</option>
+                </select>
+            </div>
+            <div class="col-12 col-sm-2 col-md-3 d-grid">
+                <button type="submit" class="btn btn-warning fw-bold">
+                    <i class="bi bi-search me-1"></i> Filtrar
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- LISTA DE TARJETAS DE PEDIDO PARA MÓVIL Y DESKTOP -->
+<div class="row g-3">
+    {% for p in pedidos %}
+    <div class="col-12 col-md-6 col-lg-4">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-header bg-light d-flex justify-content-between align-items-center py-2">
+                <span class="fw-bold font-monospace text-dark"><i class="bi bi-receipt me-1"></i>{{ p.numero_pedido }}</span>
+                {% if p.estado == 'ENVIADO' %}
+                    <span class="badge bg-warning text-dark"><i class="bi bi-clock-history me-1"></i>Enviado</span>
+                {% elif p.estado == 'EN_REVISION' %}
+                    <span class="badge bg-info text-dark"><i class="bi bi-eye me-1"></i>En Revisión</span>
+                {% elif p.estado == 'APROBADO' %}
+                    <span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>Aprobado</span>
+                {% elif p.estado == 'RECHAZADO' %}
+                    <span class="badge bg-danger"><i class="bi bi-x-circle me-1"></i>Rechazado</span>
+                {% else %}
+                    <span class="badge bg-secondary">{{ p.get_estado_display }}</span>
+                {% endif %}
+            </div>
+            <div class="card-body p-3">
+                <h6 class="fw-bold mb-1 text-primary">{{ p.cliente.razon_social }}</h6>
+                <small class="text-muted d-block mb-2">CUIT: {{ p.cliente.cuit }} | Zona: {{ p.cliente.zona.nombre|default:"Sin Zona" }}</small>
+                
+                <div class="d-flex justify-content-between align-items-baseline mb-2 bg-light p-2 rounded">
+                    <span class="small text-muted">Items: <strong>{{ p.items.count }}</strong></span>
+                    <span class="fs-5 fw-bold text-success">${{ p.monto_total|floatformat:2 }}</span>
+                </div>
+
+                <small class="text-muted d-block mb-3">
+                    <i class="bi bi-calendar3 me-1"></i> {{ p.fecha_envio|date:"d/m/Y H:i"|default:p.fecha_creacion|date:"d/m/Y H:i" }}
+                </small>
+
+                <div class="d-grid">
+                    <a href="{% url 'portal:vendedor_gestionar_pedido' p.id %}" class="btn btn-outline-dark btn-action-touch fw-bold">
+                        <i class="bi bi-pencil-square me-1"></i> Revisar / Gestionar
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% empty %}
+    <div class="col-12 text-center py-5 text-muted">
+        <i class="bi bi-check2-all display-1 d-block mb-3 text-secondary"></i>
+        <h5>No hay pedidos en la categoría seleccionada</h5>
+        <p class="small">Cambia el filtro de estado o búsqueda para consultar más pedidos.</p>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}

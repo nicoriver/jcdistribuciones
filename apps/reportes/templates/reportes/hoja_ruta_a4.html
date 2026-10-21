@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hoja de Ruta A4 - JC Distribuciones</title>
+    <!-- Bootstrap 5.3 CSS CDN -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        @page {
+            size: A4 portrait;
+            margin: 10mm 12mm 10mm 12mm;
+        }
+        body {
+            font-family: Arial, sans-serif;
+            font-size: 12px;
+            color: #000;
+            background: #fff;
+        }
+        .header-box {
+            border: 2px solid #000;
+            border-radius: 4px;
+            padding: 10px;
+            margin-bottom: 12px;
+        }
+        .section-title {
+            background-color: #e9ecef;
+            border: 1px solid #000;
+            padding: 4px 8px;
+            font-weight: bold;
+            font-size: 13px;
+            margin-top: 15px;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+        }
+        .table-a4 th {
+            background-color: #f8f9fa !important;
+            border-bottom: 2px solid #000;
+            font-size: 11px;
+            text-transform: uppercase;
+        }
+        .table-a4 td {
+            font-size: 11px;
+            vertical-align: middle;
+        }
+        @media print {
+            .no-print {
+                display: none !important;
+            }
+            body {
+                background: #fff !important;
+            }
+        }
+    </style>
+</head>
+<body>
+
+<div class="no-print p-3 bg-dark text-white d-flex justify-content-between align-items-center mb-3">
+    <span class="fw-bold"><i class="bi bi-printer me-2"></i>Vista Previa de Impresión - Hoja de Ruta A4</span>
+    <button onclick="window.print()" class="btn btn-warning btn-sm fw-bold">
+        🖨️ Imprimir / PDF
+    </button>
+</div>
+
+<div class="container-fluid">
+    <!-- ENCABEZADO A4 -->
+    <div class="header-box">
+        <div class="row align-items-center">
+            <div class="col-8">
+                <h3 class="fw-bold mb-0">JC DISTRIBUCIONES</h3>
+                <h5 class="fw-bold text-secondary mb-0">HOJA DE RUTA Y PLANILLA DE CARGA</h5>
+            </div>
+            <div class="col-4 text-end">
+                <div>Fecha: <strong>{{ fecha_str }}</strong></div>
+                <div>Zona: <strong>{{ zona_obj.nombre|default:"Todas" }}</strong></div>
+                <div>Chofer / Unidad: <strong>{{ chofer|default:"____________________" }}</strong></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- SECCIÓN 1: PLANILLA DE CARGA CONSOLIDADA -->
+    <div class="section-title">1. Planilla de Carga Consolidada (Mercadería para Depósito / Camión)</div>
+    <table class="table table-bordered table-sm table-a4 mb-3">
+        <thead>
+            <tr>
+                <th style="width: 5%;">#</th>
+                <th style="width: 15%;">Código</th>
+                <th style="width: 50%;">Descripción del Producto</th>
+                <th style="width: 15%;">Presentación</th>
+                <th class="text-center" style="width: 15%;">Cant. a Cargar</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in planilla_carga %}
+            <tr>
+                <td class="text-muted">{{ forloop.counter }}</td>
+                <td class="font-monospace fw-bold">{{ item.codigo }}</td>
+                <td class="fw-bold">{{ item.descripcion }}</td>
+                <td>{{ item.presentacion }}</td>
+                <td class="text-center fw-bold fs-6">{{ item.cantidad|floatformat:0 }}</td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="5" class="text-center text-muted">No hay bultos registrados para carga.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <!-- SECCIÓN 2: RUTA DE PARADAS DE ENTREGA -->
+    <div class="section-title">2. Ruta de Clientes y Paradas de Entrega</div>
+    <table class="table table-bordered table-sm table-a4 mb-3">
+        <thead>
+            <tr>
+                <th style="width: 5%;">Parada</th>
+                <th style="width: 25%;">Cliente / Razón Social</th>
+                <th style="width: 30%;">Dirección / Localidad</th>
+                <th style="width: 15%;">N° Remito</th>
+                <th class="text-end" style="width: 12%;">Valor Declarado</th>
+                <th class="text-center" style="width: 13%;">Firma Conforme</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for r in remitos %}
+            <tr>
+                <td class="text-center fw-bold">{{ forloop.counter }}</td>
+                <td class="fw-bold">{{ r.cliente.razon_social }}</td>
+                <td>{{ r.cliente.domicilio }} ({{ r.cliente.localidad.nombre|default:"-" }})</td>
+                <td class="font-monospace fw-bold">{{ r.numero_remito }}</td>
+                <td class="text-end fw-bold">${{ r.monto_total|floatformat:2 }}</td>
+                <td></td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="6" class="text-center text-muted">No hay paradas de entrega asignadas.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+</body>
+</html>

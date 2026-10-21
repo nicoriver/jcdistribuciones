@@ -1,0 +1,116 @@
+{% extends "gestion/base_gestion.html" %}
+
+{% block title %}{{ titulo }} - JC Gestor{% endblock %}
+
+{% block content %}
+<div class="row mb-3 align-items-center">
+    <div class="col-8">
+        <h3 class="fw-bold mb-0 text-dark"><i class="bi bi-person-gear me-2 text-primary"></i>{{ titulo }}</h3>
+    </div>
+    <div class="col-4 text-end">
+        <a href="{% url 'gestion:clientes_list' %}" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-arrow-left me-1"></i> Volver a Clientes
+        </a>
+    </div>
+</div>
+
+<form method="post">
+    {% csrf_token %}
+    <div class="row g-4">
+        <!-- SECCIÓN 1: DATOS COMERCIALES -->
+        <div class="col-12 col-md-6">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-header bg-white py-3">
+                    <h6 class="mb-0 fw-bold"><i class="bi bi-building me-2 text-primary"></i>Datos Comerciales & Identificación</h6>
+                </div>
+                <div class="card-body p-3">
+                    <div class="mb-3">
+                        <label for="{{ form.razon_social.id_for_label }}" class="form-label small fw-bold">Razón Social *</label>
+                        {{ form.razon_social }}
+                    </div>
+                    <div class="mb-3">
+                        <label for="{{ form.nombre_fantasia.id_for_label }}" class="form-label small fw-bold">Nombre de Fantasía</label>
+                        {{ form.nombre_fantasia }}
+                    </div>
+                    <div class="row g-2 mb-3">
+                        <div class="col-6">
+                            <label for="{{ form.cuit.id_for_label }}" class="form-label small fw-bold">CUIT (11 dígitos) *</label>
+                            {{ form.cuit }}
+                        </div>
+                        <div class="col-6">
+                            <label for="{{ form.condicion_iva.id_for_label }}" class="form-label small fw-bold">Condición IVA *</label>
+                            {{ form.condicion_iva }}
+                        </div>
+                    </div>
+                    <div class="row g-2 mb-3">
+                        <div class="col-6">
+                            <label for="{{ form.telefono.id_for_label }}" class="form-label small fw-bold">Teléfono Contacto</label>
+                            {{ form.telefono }}
+                        </div>
+                        <div class="col-6">
+                            <label for="{{ form.email.id_for_label }}" class="form-label small fw-bold">E-mail</label>
+                            {{ form.email }}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- SECCIÓN 2: LOGÍSTICA & FACTURACIÓN -->
+        <div class="col-12 col-md-6">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-header bg-white py-3">
+                    <h6 class="mb-0 fw-bold"><i class="bi bi-truck me-2 text-success"></i>Logística, Reparto y Lista de Precios</h6>
+                </div>
+                <div class="card-body p-3">
+                    <div class="mb-3">
+                        <label for="{{ form.domicilio.id_for_label }}" class="form-label small fw-bold">Domicilio Comercial *</label>
+                        {{ form.domicilio }}
+                    </div>
+                    <div class="row g-2 mb-3">
+                        <div class="col-6">
+                            <label for="{{ form.localidad.id_for_label }}" class="form-label small fw-bold">Localidad</label>
+                            {{ form.localidad }}
+                        </div>
+                        <div class="col-6">
+                            <label for="{{ form.zona.id_for_label }}" class="form-label small fw-bold">Zona Logística</label>
+                            {{ form.zona }}
+                        </div>
+                    </div>
+                    <div class="row g-2 mb-3">
+                        <div class="col-6">
+                            <label for="{{ form.vendedor.id_for_label }}" class="form-label small fw-bold">Vendedor Asignado</label>
+                            {{ form.vendedor }}
+                        </div>
+                        <div class="col-6">
+                            <label for="{{ form.dia_reparto.id_for_label }}" class="form-label small fw-bold">Día Fijo de Reparto</label>
+                            {{ form.dia_reparto }}
+                        </div>
+                    </div>
+                    <div class="row g-2 mb-3">
+                        <div class="col-6">
+                            <label for="{{ form.lista_precio_default.id_for_label }}" class="form-label small fw-bold">Lista de Precios *</label>
+                            {{ form.lista_precio_default }}
+                        </div>
+                        <div class="col-6">
+                            <label for="{{ form.monto_minimo_pedido.id_for_label }}" class="form-label small fw-bold">Monto Mínimo Pedido ($)</label>
+                            {{ form.monto_minimo_pedido }}
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="{{ form.estado.id_for_label }}" class="form-label small fw-bold">Estado de Cuenta *</label>
+                        {{ form.estado }}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12 d-flex justify-content-end gap-2">
+            <a href="{% url 'gestion:clientes_list' %}" class="btn btn-outline-secondary fw-bold">Cancelar</a>
+            <button type="submit" class="btn btn-primary btn-action-touch fw-bold px-4">
+                <i class="bi bi-save me-1"></i> Guardar Cliente
+            </button>
+        </div>
+    </div>
+</form>
+{% endblock %}

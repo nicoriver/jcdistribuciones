@@ -1,0 +1,134 @@
+{% extends "gestion/base_gestion.html" %}
+
+{% block title %}Bandeja de Facturación - Supervisor{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-2">
+    <div>
+        <h3 class="fw-bold mb-0 text-dark">
+            <i class="bi bi-receipt-cutoff me-2 text-success"></i>Bandeja de Facturación de Pedidos Aprobados
+        </h3>
+        <p class="text-muted small mb-0">
+            Pedidos revisados y aprobados listos para emitir Remito A4 comercial y descontar stock físico en un solo clic.
+        </p>
+    </div>
+    <div>
+        <a href="{% url 'gestion:remito_directo' %}" class="btn btn-primary btn-sm fw-bold">
+            <i class="bi bi-lightning-charge-fill me-1"></i> Venta Directa / Remito de Mostrador
+        </a>
+    </div>
+</div>
+
+<!-- FILTROS POR ZONA, VENDEDOR Y BÚSQUEDA -->
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-body">
+        <form method="get" class="row g-3 align-items-end">
+            <div class="col-12 col-md-4">
+                <label class="form-label small fw-bold text-muted">Buscar por N° Pedido, Razón Social o CUIT</label>
+                <input type="text" name="q" value="{{ query }}" class="form-control form-control-sm" placeholder="Ej: PED-2026, Kiosco, 30-...">
+            </div>
+            <div class="col-12 col-md-3">
+                <label class="form-label small fw-bold text-muted">Filtrar por Zona de Reparto</label>
+                <select name="zona" class="form-select form-select-sm">
+                    <option value="">-- Todas las Zonas --</option>
+                    {% for z in zonas %}
+                        <option value="{{ z.id }}" {% if zona_actual == z.id %}selected{% endif %}>{{ z.nombre }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-12 col-md-3">
+                <label class="form-label small fw-bold text-muted">Filtrar por Vendedor</label>
+                <select name="vendedor" class="form-select form-select-sm">
+                    <option value="">-- Todos los Vendedores --</option>
+                    {% for v in vendedores %}
+                        <option value="{{ v.id }}" {% if vendedor_actual == v.id %}selected{% endif %}>{{ v.nombre_completo }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-12 col-md-2 d-flex gap-2">
+                <button type="submit" class="btn btn-dark btn-sm w-100 fw-bold">
+                    <i class="bi bi-funnel-fill me-1"></i> Filtrar
+                </button>
+                <a href="{% url 'gestion:bandeja_facturacion' %}" class="btn btn-outline-secondary btn-sm">
+                    Limpiar
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- TABLA DE PEDIDOS APROBADOS -->
+<div class="card border-0 shadow-sm">
+    <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+        <h6 class="mb-0 fw-bold">
+            <i class="bi bi-check2-all me-2 text-success"></i>Pedidos en Estado APROBADO ({{ pedidos_aprobados|length }})
+        </h6>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>N° Pedido</th>
+                        <th>Fecha</th>
+                        <th>Cliente / CUIT</th>
+                        <th>Zona / Vendedor</th>
+                        <th>Renglones</th>
+                        <th class="text-end">Total Estimado</th>
+                        <th class="text-end">Acción de Facturación</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for pedido in pedidos_aprobados %}
+                    <tr>
+                        <td class="font-monospace fw-bold text-primary">{{ pedido.numero_pedido }}</td>
+                        <td class="small text-muted">{{ pedido.fecha_creacion|date:"d/m/Y H:i" }}</td>
+                        <td>
+                            <div class="fw-bold text-dark">{{ pedido.cliente.razon_social }}</div>
+                            <small class="text-muted font-monospace">CUIT: {{ pedido.cliente.cuit }}</small>
+                        </td>
+                        <td>
+                            <span class="badge bg-info text-dark">{{ pedido.cliente.zona.nombre|default:"Sin Zona" }}</span>
+                            <div class="small text-muted mt-1">
+                                Vend.: {{ pedido.vendedor.nombre_completo|default:"Mostrador" }}
+                            </div>
+                        </td>
+                        <td>
+                            <ul class="list-unstyled mb-0 small">
+                                {% for det in pedido.detalles.all %}
+                                <li>
+                                    <strong>{{ det.cantidad }}x</strong> {{ det.producto.nombre }}
+                                    {% if det.presentacion %}({{ det.presentacion.nombre }}){% endif %}
+                                    {% if det.porcentaje_descuento > 0 %}
+                                        <span class="badge bg-warning text-dark">-{{ det.porcentaje_descuento }}%</span>
+                                    {% endif %}
+                                </li>
+                                {% endfor %}
+                            </ul>
+                        </td>
+                        <td class="text-end fw-bold fs-6 text-success">
+                            ${{ pedido.total_estimado|floatformat:2 }}
+                        </td>
+                        <td class="text-end">
+                            <form method="post" action="{% url 'gestion:facturar_pedido' pedido.id %}">
+                                {% csrf_token %}
+                                <button type="submit" class="btn btn-success btn-sm fw-bold shadow-sm">
+                                    <i class="bi bi-printer-fill me-1"></i> Facturar y Emitir Remito
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="7" class="text-center py-5 text-muted">
+                            <i class="bi bi-inbox fs-2 d-block mb-2"></i>
+                            No hay pedidos en estado APROBADO pendientes de facturación con los filtros seleccionados.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

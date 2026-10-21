@@ -1,0 +1,286 @@
+{% extends 'gestion/base_gestion.html' %}
+
+{% block title %}Simulador Interactivo de Precios - Panel de Gestión{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="h3 fw-bold mb-0 text-dark"><i class="bi bi-calculator me-2 text-info"></i>Simulador Interactivo de Precios en Vivo</h2>
+        <p class="text-muted small mb-0">Calculadora dinámica de márgenes, impuestos, descuentos y precio objetivo en tiempo real</p>
+    </div>
+    <a href="{% url 'gestion:productos_list' %}" class="btn btn-outline-secondary">
+        <i class="bi bi-box-seam me-1"></i> Ir a Catálogo de Productos
+    </a>
+</div>
+
+<div class="row g-4">
+    <!-- SECTOR ENTRADAS Y CONFIGURACIÓN -->
+    <div class="col-lg-6">
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-white py-3 border-0">
+                <h5 class="card-title fw-bold text-dark mb-0"><i class="bi bi-sliders me-2 text-primary"></i>Parámetros de Cálculo</h5>
+            </div>
+            <div class="card-body">
+                <!-- Selector de Producto Existente -->
+                <div class="mb-4 p-3 border rounded bg-light">
+                    <label class="form-label fw-bold text-dark mb-1"><i class="bi bi-search me-1"></i> Cargar desde Producto del Catálogo (Opcional)</label>
+                    <select id="select-producto-catalogo" class="form-select">
+                        <option value="">-- Seleccionar producto libre --</option>
+                        {% for prod in productos %}
+                        <option value="{{ prod.id }}" 
+                                data-costo="{{ prod.costo }}" 
+                                data-iva="{{ prod.alicuota_iva.porcentaje }}">
+                            {{ prod.nombre }} (Costo: ${{ prod.costo|floatformat:2 }} - IVA: {{ prod.alicuota_iva.porcentaje }}%)
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label fw-semibold">Costo Base ($)</label>
+                        <div class="input-group">
+                            <span class="input-group-text">$</span>
+                            <input type="number" step="0.01" min="0" id="input-costo" class="form-control" value="100.00">
+                        </div>
+                    </div>
+
+                    <div class="col-md-6">
+                        <label class="form-label fw-semibold">Alícuota IVA (%)</label>
+                        <select id="select-iva" class="form-select">
+                            <option value="21.00" selected>21.00% (General)</option>
+                            <option value="10.50">10.50% (Reducido)</option>
+                            <option value="0.00">0.00% (Exento)</option>
+                        </select>
+                    </div>
+
+                    <div class="col-md-6">
+                        <label class="form-label fw-semibold">% Recargo / Utilidad</label>
+                        <div class="input-group">
+                            <input type="number" step="0.01" id="input-recargo" class="form-control" value="30.00">
+                            <span class="input-group-text">%</span>
+                        </div>
+                    </div>
+
+                    <div class="col-md-6">
+                        <label class="form-label fw-semibold">% Descuento Comercial</label>
+                        <div class="input-group">
+                            <input type="number" step="0.01" min="0" max="100" id="input-descuento" class="form-control" value="0.00">
+                            <span class="input-group-text">%</span>
+                        </div>
+                    </div>
+                </div>
+
+                <hr class="my-4 text-muted">
+
+                <!-- MODO INVERSO / PRECIO OBJETIVO -->
+                <div class="p-3 border rounded bg-warning-subtle border-warning">
+                    <h6 class="fw-bold text-dark mb-2"><i class="bi bi-bullseye me-1 text-danger"></i> Modo Inverso ("Precio Objetivo")</h6>
+                    <p class="small text-muted mb-2">Ingrese el precio final de venta deseado para calcular automáticamente el % de recargo necesario.</p>
+                    
+                    <div class="row g-2 align-items-center">
+                        <div class="col-md-7">
+                            <label class="form-label small fw-bold mb-1">Precio Final Objetivo ($)</label>
+                            <div class="input-group input-group-sm">
+                                <span class="input-group-text">$</span>
+                                <input type="number" step="0.01" min="0" id="input-precio-objetivo" class="form-control" placeholder="Ej. 150.00">
+                            </div>
+                        </div>
+                        <div class="col-md-5 pt-3 pt-md-0">
+                            <button type="button" id="btn-calcular-inverso" class="btn btn-warning btn-sm w-100 fw-bold">
+                                <i class="bi bi-arrow-repeat me-1"></i> Calcular Recargo
+                            </button>
+                        </div>
+                    </div>
+                    <div id="alerta-error-inverso" class="text-danger small mt-2 d-none fw-semibold"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- SECTOR RESULTADOS EN VIVO -->
+    <div class="col-lg-6">
+        <div class="card border-0 shadow-sm bg-dark text-white mb-4">
+            <div class="card-header bg-transparent py-3 border-secondary">
+                <h5 class="card-title fw-bold mb-0 text-warning"><i class="bi bi-display me-2"></i>Resultado del Cálculo en Tiempo Real</h5>
+            </div>
+            <div class="card-body">
+                <div class="d-flex flex-column gap-3">
+                    <div class="d-flex justify-content-between align-items-center border-bottom border-secondary pb-2">
+                        <span class="text-light">Costo Base Original:</span>
+                        <strong class="fs-5 text-white" id="res-costo">$0.00</strong>
+                    </div>
+
+                    <div class="d-flex justify-content-between align-items-center border-bottom border-secondary pb-2">
+                        <span class="text-light">Subtotal Neto con Recargo (sin IVA):</span>
+                        <strong class="fs-5 text-info" id="res-subtotal-neto">$0.00</strong>
+                    </div>
+
+                    <div class="d-flex justify-content-between align-items-center border-bottom border-secondary pb-2">
+                        <span class="text-light">Monto IVA (<span id="res-iva-pct">21%</span>):</span>
+                        <strong class="fs-5 text-secondary" id="res-monto-iva">$0.00</strong>
+                    </div>
+
+                    <div class="d-flex justify-content-between align-items-center border-bottom border-secondary pb-2">
+                        <span class="text-light">Subtotal Bruto con IVA:</span>
+                        <strong class="fs-5 text-light" id="res-subtotal-iva">$0.00</strong>
+                    </div>
+
+                    <div class="d-flex justify-content-between align-items-center border-bottom border-secondary pb-2">
+                        <span class="text-light">Monto Descuento (<span id="res-desc-pct">0%</span>):</span>
+                        <strong class="fs-5 text-danger" id="res-monto-descuento">-$0.00</strong>
+                    </div>
+
+                    <div class="p-3 bg-secondary-subtle text-dark rounded text-center my-2">
+                        <span class="text-uppercase small fw-bold tracking-wide d-block text-muted">PRECIO FINAL DE VENTA ($)</span>
+                        <span class="display-5 fw-bold text-success" id="res-precio-final">$0.00</span>
+                    </div>
+
+                    <div id="btn-aplicar-container" class="pt-2 d-none">
+                        <a id="btn-aplicar-lista" href="#" class="btn btn-warning w-100 fw-bold py-2">
+                            <i class="bi bi-check2-circle me-1"></i> Editar Producto en Catálogo
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const inputCosto = document.getElementById('input-costo');
+    const selectIva = document.getElementById('select-iva');
+    const inputRecargo = document.getElementById('input-recargo');
+    const inputDescuento = document.getElementById('input-descuento');
+    
+    const inputPrecioObjetivo = document.getElementById('input-precio-objetivo');
+    const btnCalcularInverso = document.getElementById('btn-calcular-inverso');
+    const alertaErrorInverso = document.getElementById('alerta-error-inverso');
+    const selectProducto = document.getElementById('select-producto-catalogo');
+
+    const resCosto = document.getElementById('res-costo');
+    const resSubtotalNeto = document.getElementById('res-subtotal-neto');
+    const resIvaPct = document.getElementById('res-iva-pct');
+    const resMontoIva = document.getElementById('res-monto-iva');
+    const resSubtotalIva = document.getElementById('res-subtotal-iva');
+    const resDescPct = document.getElementById('res-desc-pct');
+    const resMontoDescuento = document.getElementById('res-monto-descuento');
+    const resPrecioFinal = document.getElementById('res-precio-final');
+
+    const btnAplicarContainer = document.getElementById('btn-aplicar-container');
+    const btnAplicarLista = document.getElementById('btn-aplicar-lista');
+
+    function fmt(val) {
+        return '$' + (isNaN(val) ? 0 : val).toFixed(2);
+    }
+
+    function calcularPrecios() {
+        const costo = parseFloat(inputCosto.value) || 0;
+        const ivaPct = parseFloat(selectIva.value) || 0;
+        const recargoPct = parseFloat(inputRecargo.value) || 0;
+        const descuentoPct = parseFloat(inputDescuento.value) || 0;
+
+        // 1. Subtotal Neto = costo * (1 + recargo / 100)
+        const subtotalNeto = costo * (1 + (recargoPct / 100));
+        
+        // 2. Monto IVA = subtotalNeto * (iva / 100)
+        const montoIva = subtotalNeto * (ivaPct / 100);
+        
+        // 3. Subtotal con IVA = subtotalNeto + montoIva
+        const subtotalIva = subtotalNeto + montoIva;
+
+        // 4. Monto Descuento = subtotalIva * (descuento / 100)
+        const montoDescuento = subtotalIva * (descuentoPct / 100);
+
+        // 5. Precio Final = subtotalIva - montoDescuento
+        const precioFinal = subtotalIva - montoDescuento;
+
+        resCosto.textContent = fmt(costo);
+        resSubtotalNeto.textContent = fmt(subtotalNeto);
+        resIvaPct.textContent = ivaPct.toFixed(1) + '%';
+        resMontoIva.textContent = fmt(montoIva);
+        resSubtotalIva.textContent = fmt(subtotalIva);
+        resDescPct.textContent = descuentoPct.toFixed(1) + '%';
+        resMontoDescuento.textContent = '-' + fmt(montoDescuento);
+        resPrecioFinal.textContent = fmt(precioFinal);
+    }
+
+    function calcularInverso() {
+        alertaErrorInverso.classList.add('d-none');
+        alertaErrorInverso.textContent = '';
+
+        const precioObj = parseFloat(inputPrecioObjetivo.value);
+        const costo = parseFloat(inputCosto.value) || 0;
+        const ivaPct = parseFloat(selectIva.value) || 0;
+        const descuentoPct = parseFloat(inputDescuento.value) || 0;
+
+        if (isNaN(precioObj) || precioObj <= 0) {
+            alertaErrorInverso.textContent = 'Ingrese un precio objetivo mayor a 0.';
+            alertaErrorInverso.classList.remove('d-none');
+            return;
+        }
+
+        // Validación para evitar división por cero / desbordamiento
+        const factorDescuento = 1 - (descuentoPct / 100);
+        const factorIva = 1 + (ivaPct / 100);
+        const denominador = costo * factorIva * factorDescuento;
+
+        if (costo <= 0) {
+            alertaErrorInverso.textContent = 'El costo base debe ser mayor a 0 para calcular el recargo inverso.';
+            alertaErrorInverso.classList.remove('d-none');
+            return;
+        }
+
+        if (descuentoPct >= 100 || factorDescuento <= 0 || denominador <= 0) {
+            alertaErrorInverso.textContent = 'No se puede calcular recargo con descuento igual o superior al 100%.';
+            alertaErrorInverso.classList.remove('d-none');
+            return;
+        }
+
+        // Fórmula: Recargo = ((PrecioObjetivo / (Costo * (1 + IVA/100) * (1 - Desc/100))) - 1) * 100
+        const recargoNecesario = ((precioObj / denominador) - 1) * 100;
+        inputRecargo.value = recargoNecesario.toFixed(2);
+
+        calcularPrecios();
+    }
+
+    // Eventos de entrada en vivo
+    [inputCosto, selectIva, inputRecargo, inputDescuento].forEach(el => {
+        el.addEventListener('input', calcularPrecios);
+        el.addEventListener('change', calcularPrecios);
+    });
+
+    btnCalcularInverso.addEventListener('click', calcularInverso);
+    inputPrecioObjetivo.addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            calcularInverso();
+        }
+    });
+
+    // Cargar datos de producto seleccionado
+    selectProducto.addEventListener('change', function() {
+        const selectedOpt = this.options[this.selectedIndex];
+        if (selectedOpt && selectedOpt.value) {
+            const costoVal = parseFloat(selectedOpt.getAttribute('data-costo')) || 0;
+            const ivaVal = parseFloat(selectedOpt.getAttribute('data-iva')) || 21;
+
+            inputCosto.value = costoVal.toFixed(2);
+            selectIva.value = ivaVal.toFixed(2);
+
+            btnAplicarLista.href = '/gestion/productos/' + selectedOpt.value + '/editar/';
+            btnAplicarContainer.classList.remove('d-none');
+        } else {
+            btnAplicarContainer.classList.add('d-none');
+        }
+        calcularPrecios();
+    });
+
+    // Inicializar cálculo al cargar
+    calcularPrecios();
+});
+</script>
+{% endblock %}

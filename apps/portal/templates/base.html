@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}JC Distribuciones - Portal Comercial{% endblock %}</title>
+    <!-- Bootstrap 5.3 CSS CDN -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Bootstrap Icons CDN -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #f8f9fa;
+            font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        }
+        .navbar-brand {
+            font-weight: 700;
+            letter-spacing: -0.5px;
+        }
+        .card {
+            border-radius: 10px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+            border: 1px solid #e9ecef;
+        }
+        .sticky-mobile-top {
+            position: sticky;
+            top: 56px;
+            z-index: 1020;
+            background: #ffffff;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.04);
+        }
+        .fixed-bottom-bar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            z-index: 1030;
+            background: #ffffff;
+            border-top: 1px solid #dee2e6;
+            padding: 10px 16px;
+            box-shadow: 0 -4px 10px rgba(0,0,0,0.08);
+        }
+        .badge-cart {
+            font-size: 0.75rem;
+            padding: 0.35em 0.6em;
+        }
+        .btn-action-touch {
+            min-height: 44px;
+            font-weight: 600;
+        }
+    </style>
+    {% block extra_css %}{% endblock %}
+</head>
+<body class="pb-5">
+
+    <!-- NAVBAR RESPONISVA -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark sticky-top">
+        <div class="container">
+            <a class="navbar-brand text-warning" href="{% url 'portal:catalogo' %}">
+                <i class="bi bi-box-seam-fill me-1"></i> JC Distribuciones
+            </a>
+            
+            {% if user.is_authenticated %}
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarPortal">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarPortal">
+                <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+                    {% if user.rol == 'DEPOSITO' %}
+                    <li class="nav-item">
+                        <a class="nav-link text-warning fw-bold" href="{% url 'gestion:deposito_pedidos' %}">
+                            <i class="bi bi-box-seam me-1"></i> Expedición / Pedidos
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link text-light" href="{% url 'comprobantes:remitos_list' %}">
+                            <i class="bi bi-receipt me-1"></i> Remitos y Devoluciones
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link text-info" href="{% url 'reportes:hoja_ruta' %}">
+                            <i class="bi bi-truck me-1"></i> Hoja de Ruta / Carga
+                        </a>
+                    </li>
+                    {% elif user.rol == 'VENDEDOR' %}
+                    <li class="nav-item">
+                        <a class="nav-link text-warning fw-bold" href="{% url 'portal:vendedor_pedidos' %}">
+                            <i class="bi bi-phone-vibrate-fill me-1"></i> Panel Vendedor
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link text-success fw-bold" href="{% url 'portal:vendedor_seleccionar_cliente' %}">
+                            <i class="bi bi-plus-circle me-1"></i> Tomar Pedido
+                        </a>
+                    </li>
+                    {% elif user.rol == 'CLIENTE' or user.perfil_cliente %}
+                    <li class="nav-item">
+                        <a class="nav-link" href="{% url 'portal:catalogo' %}">
+                            <i class="bi bi-grid-fill me-1"></i> Catálogo
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{% url 'portal:mis_pedidos' %}">
+                            <i class="bi bi-journal-text me-1"></i> Mis Pedidos
+                        </a>
+                    </li>
+                    {% else %}
+                    <!-- ADMIN / FACTURACION / SUPERUSER -->
+                    <li class="nav-item">
+                        <a class="nav-link text-warning fw-bold" href="{% url 'gestion:dashboard' %}">
+                            <i class="bi bi-speedometer2 me-1"></i> Panel de Gestión
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link text-light" href="{% url 'comprobantes:remitos_list' %}">
+                            <i class="bi bi-receipt me-1"></i> Remitos y Devoluciones
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link text-info" href="{% url 'reportes:hoja_ruta' %}">
+                            <i class="bi bi-truck me-1"></i> Hoja de Ruta / Carga
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link text-success" href="{% url 'reportes:ventas_vendedores' %}">
+                            <i class="bi bi-graph-up-arrow me-1"></i> Reporte Ventas
+                        </a>
+                    </li>
+                    {% endif %}
+                </ul>
+
+                <div class="d-flex align-items-center gap-2">
+                    {% if user.rol == 'CLIENTE' or user.perfil_cliente %}
+                    <a href="{% url 'portal:carrito' %}" class="btn btn-warning position-relative me-2">
+                        <i class="bi bi-cart-fill"></i> Carrito
+                        <span id="cart-badge-nav" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger badge-cart">
+                            {{ pedido.items.count|default:0 }}
+                        </span>
+                    </a>
+                    {% endif %}
+
+                    <span class="navbar-text text-light small me-2 d-none d-md-inline">
+                        <i class="bi bi-person-circle me-1"></i>{{ user.nombre_completo|default:user.username }}
+                        <span class="badge bg-secondary ms-1">{{ user.get_rol_display|default:user.rol }}</span>
+                    </span>
+
+                    <a href="{% url 'portal:logout' %}" class="btn btn-outline-light btn-sm">
+                        <i class="bi bi-box-arrow-right"></i> Salir
+                    </a>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </nav>
+
+    <!-- MENSAJES DE ALERTA -->
+    <div class="container mt-3">
+        {% if messages %}
+            {% for message in messages %}
+                <div class="alert alert-{% if message.tags == 'error' %}danger{% else %}{{ message.tags }}{% endif %} alert-dismissible fade show" role="alert">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+            {% endfor %}
+        {% endif %}
+
+        {% block content %}{% endblock %}
+    </div>
+
+    <!-- Bootstrap 5.3 JS Bundle CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

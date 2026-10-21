@@ -1,0 +1,179 @@
+# Documento de Especificación de Fórmulas y Cálculos Comerciales
+## Sistema de Gestión Comercial y Control de Inventarios - JC Distribuciones
+
+---
+
+## 1. Introducción
+El presente documento consolida y especifica detalladamente la totalidad de las **fórmulas matemáticas, algoritmos de cálculo, desglose fiscal e impositivo y reglas numéricas** implementadas en el sistema **JC Distribuciones**. 
+
+Este documento sirve como referencia formal de auditoría financiera, validación de software y especificación lógica para la capa de negocio ([CN_Lista.cs](file:///c:/jcdistribuciones/jcdistribuciones/CapaNegocio/CN_Lista.cs), [CN_Venta_Extensiones.cs](file:///c:/jcdistribuciones/jcdistribuciones/CapaNegocio/CN_Venta_Extensiones.cs), [frmVentasFiscales.cs](file:///c:/jcdistribuciones/jcdistribuciones/CapaPresentacion/frmVentasFiscales.cs)).
+
+---
+
+## 2. Formación de Precios de Venta y Listas de Precios
+
+El precio final de un artículo en una lista de precios (Mayorista, Minorista, Promoción) se calcula a partir del **Precio de Costo base** aplicando en cascada tres factores: **Recargo/Utilidad**, **Impuesto al Valor Agregado (IVA)** y **Descuento comercial**.
+
+```mermaid
+graph LR
+    A[Precio de Costo] -->|1. + % Recargo| B[Precio con Recargo]
+    B -->|2. + % IVA| C[Precio con IVA]
+    C -->|3. - % Descuento| D[Precio Final de Lista]
+```
+
+### 2.1 Fórmulas Paso a Paso
+
+#### Paso 1: Aplicación del Recargo / Margen de Utilidad
+El recargo o margen de ganancia se aplica directamente sobre el costo base del producto:
+
+$$ \text{PrecioConRecargo} = \text{PrecioCosto} + \left( \text{PrecioCosto} \times \frac{\text{PorcentajeRecargo}}{100} \right) = \text{PrecioCosto} \times \left( 1 + \frac{\text{PorcentajeRecargo}}{100} \right) $$
+
+#### Paso 2: Aplicación del IVA (Impuesto al Valor Agregado)
+Sobre el valor acumulado con recargo, se aplica la alícuota de IVA correspondiente (10.5%, 21.0% o 27.0%):
+
+$$ \text{PrecioConIVA} = \text{PrecioConRecargo} + \left( \text{PrecioConRecargo} \times \frac{\text{PorcentajeIVA}}{100} \right) = \text{PrecioConRecargo} \times \left( 1 + \frac{\text{PorcentajeIVA}}{100} \right) $$
+
+#### Paso 3: Aplicación del Descuento
+Sobre el valor obtenido con IVA, se descuenta el porcentaje de bonificación comercial:
+
+$$ \text{PrecioFinal} = \text{PrecioConIVA} - \left( \text{PrecioConIVA} \times \frac{\text{PorcentajeDescuento}}{100} \right) = \text{PrecioConIVA} \times \left( 1 - \frac{\text{PorcentajeDescuento}}{100} \right) $$
+
+#### Redondeo Financiero
+El precio resultante se redondea a 2 decimales usando el estándar bancario (`Math.Round(..., 2)`):
+
+$$ \text{ImporteFinal} = \text{Round}(\text{PrecioFinal}, 2) $$
+
+---
+
+### 2.2 Ejemplo Numérico de Formación de Precio
+Dado un producto con:
+- $\text{PrecioCosto} = \$ 1.000,00$
+- $\text{PorcentajeRecargo} = 30\%$ (Utilidad)
+- $\text{PorcentajeIVA} = 21\%$
+- $\text{PorcentajeDescuento} = 5\%$
+
+**Cálculo:**
+1. $\text{PrecioConRecargo} = 1.000 \times (1 + 0.30) = \$ 1.300,00$
+2. $\text{PrecioConIVA} = 1.300 \times (1 + 0.21) = 1.300 \times 1.21 = \$ 1.573,00$
+3. $\text{PrecioFinal} = 1.573 \times (1 - 0.05) = 1.573 \times 0.95 = \$ 1.494,35$
+
+$$\mathbf{\text{Importe Final de Lista}} = \$ 1.494,35$$
+
+---
+
+## 3. Cálculos en Ventas Fiscales y Comprobantes
+
+### 3.1 Cálculos por Ítem de Línea en la Grilla de Ventas
+
+Para cada renglón $i$ del detalle de la venta, con cantidad $Q_i$, precio unitario $P_i$ y porcentaje de descuento $D_i\%$:
+
+#### 1. Subtotal Bruto de la Línea
+$$ \text{SubtotalBruto}_i = P_i \times Q_i $$
+
+#### 2. Descuento de la Línea
+$$ \text{ImporteDescuento}_i = \text{SubtotalBruto}_i \times \left( \frac{D_i}{100} \right) $$
+
+#### 3. Neto de la Línea (Base Imponible de la Línea)
+$$ \text{SubtotalNeto}_i = \text{SubtotalBruto}_i - \text{ImporteDescuento}_i $$
+
+#### 4. IVA de la Línea (para Comprobantes que discriminan IVA)
+Con alícuota $IVA_i\%$ (ej. 21%):
+
+$$ \text{ImporteIVA}_i = \text{SubtotalNeto}_i \times \left( \frac{IVA_i}{100} \right) $$
+
+---
+
+### 3.2 Totales Generales del Comprobante
+
+Al procesar la venta completa con $N$ ítems:
+
+#### 1. Subtotal Bruto General
+$$ \text{SubtotalBrutoTotal} = \sum_{i=1}^{N} \text{SubtotalBruto}_i $$
+
+#### 2. Total Descuentos
+$$ \text{TotalDescuentos} = \sum_{i=1}^{N} \text{ImporteDescuento}_i $$
+
+#### 3. Neto Total Gravado
+$$ \text{NetoTotal} = \sum_{i=1}^{N} \text{SubtotalNeto}_i $$
+
+#### 4. Total IVA del Comprobante
+El cálculo del IVA depende de la tipificación del comprobante (`TipoComprobante.DiscriminaIVA`):
+
+- **Caso A: Factura A / Comprobantes Discriminados (`DiscriminaIVA = 1`)**:
+  $$ \text{TotalIVA} = \text{NetoTotal} \times 0,21 \quad \left( \text{ó } \sum_{i=1}^{N} \text{ImporteIVA}_i \right) $$
+
+- **Caso B: Factura B / Recibo / Remito (`DiscriminaIVA = 0`)**:
+  El IVA no se discrimina en el documento visual y el impuesto está embebido dentro del precio de la lista.
+  $$ \text{TotalIVA} = 0,00 $$
+
+#### 5. Monto Total del Comprobante
+$$ \text{MontoTotal} = \text{NetoTotal} + \text{TotalIVA} $$
+
+#### 6. Cálculo del Cambio / Vuelto
+Dado el importe abonado por el cliente ($\text{MontoPago}$):
+
+$$ \text{MontoCambio} = \text{MontoPago} - \text{MontoTotal} $$
+
+---
+
+## 4. Desglose Inverso de IVA (Facturación B a Consumidor Final)
+
+Cuando se emite una **Factura B** o comprobante con IVA incluido y se requiere determinar la **Base Imponible Neta** y el **Impuesto IVA contenido** para la registración contable/fiscal:
+
+### Fórmulas de Desglose Inverso:
+
+$$ \text{BaseImponible (Neto Gravado)} = \frac{\text{MontoTotalWithIVA}}{1 + \frac{\text{PorcentajeIVA}}{100}} = \frac{\text{MontoTotalWithIVA}}{1.21} $$
+
+$$ \text{ImporteIVA} = \text{MontoTotalWithIVA} - \text{BaseImponible} $$
+
+---
+
+## 5. Devoluciones y Notas de Crédito (NCA / NCB)
+
+En el módulo de devoluciones ([CN_Venta_Extensiones.cs](file:///c:/jcdistribuciones/jcdistribuciones/CapaNegocio/CN_Venta_Extensiones.cs)), se validan y calculan las notas de crédito:
+
+### 5.1 Validación de Cantidades a Devolver
+Para cada producto $i$:
+
+$$ 0 < Q_{\text{Devolución}, i} \le Q_{\text{Original}, i} $$
+
+### 5.2 Ajuste Fiscal de Nota de Crédito
+Las Notas de Crédito A (NCA) y B (NCB) recalculan la base imponible y el IVA devuelto aplicando la misma relación proporcional del comprobante original:
+
+$$ \text{SubtotalNC} = \sum \left( P_i \times Q_{\text{Devolución}, i} \right) - \text{DescuentosProporcionales} $$
+
+$$ \text{TotalIVANC} = \text{SubtotalNC} \times \left( \frac{\text{PorcentajeIVA}}{100} \right) \quad (\text{si NCA}) $$
+
+$$ \text{MontoTotalNC} = \text{SubtotalNC} + \text{TotalIVANC} $$
+
+---
+
+## 6. Control de Stock e Inventario
+
+### 6.1 Ecuación de Balance de Inventario
+El stock resultante de un producto $P$ tras una operación comercial responde a:
+
+$$ \text{Stock}_{t+1} = \text{Stock}_t + \Delta_{\text{Compra}} - \Delta_{\text{Venta}} + \Delta_{\text{NotaCredito}} $$
+
+Donde:
+- $\Delta_{\text{Compra}} = +Q_{\text{Comprada}}$
+- $\Delta_{\text{Venta}} = -Q_{\text{Vendida}}$ (si `ControlaStock = 1`)
+- $\Delta_{\text{NotaCredito}} = +Q_{\text{Devuelta}}$
+
+### 6.2 Alerta por Punto de Reposición
+El sistema evalúa continuamente la condición de reposición para emisión de alarmas de compras:
+
+$$ \text{AlertaReposición} = \begin{cases} \mathbf{\text{ACTIVA (Reponer)}}, & \text{si } \text{Stock} \le \text{Punto\_reposicion} \\ \mathbf{\text{INACTIVA (OK)}}, & \text{si } \text{Stock} > \text{Punto\_reposicion} \end{cases} $$
+
+---
+
+## 7. Tabla Resumen de Fórmulas y Referencias en Código
+
+| Cálculo / Operación | Fórmula Matemática | Archivo de Código Fuente |
+| :--- | :--- | :--- |
+| **Precio Venta en Lista** | $P_{\text{final}} = P_{\text{costo}} \cdot (1 + \frac{R}{100}) \cdot (1 + \frac{IVA}{100}) \cdot (1 - \frac{Desc}{100})$ | [CN_Lista.cs:L44-L56](file:///c:/jcdistribuciones/jcdistribuciones/CapaNegocio/CN_Lista.cs#L44-L56) |
+| **Subtotal Línea Venta** | $\text{SubTotal}_i = (P_i \cdot Q_i) \cdot (1 - \frac{D_i}{100})$ | [frmVentasFiscales.cs:L365-L373](file:///c:/jcdistribuciones/jcdistribuciones/CapaPresentacion/frmVentasFiscales.cs#L365-L373) |
+| **Total IVA Venta** | $\text{TotalIVA} = \text{NetoTotal} \cdot 0.21$ | [frmVentasFiscales.cs:L512](file:///c:/jcdistribuciones/jcdistribuciones/CapaPresentacion/frmVentasFiscales.cs#L512) |
+| **Total Final Venta** | $\text{TotalFinal} = \text{NetoTotal} + \text{TotalIVA}$ | [frmVentasFiscales.cs:L515](file:///c:/jcdistribuciones/jcdistribuciones/CapaPresentacion/frmVentasFiscales.cs#L515) |
+| **Cálculo de Cambio** | $\text{Cambio} = \text{MontoPago} - \text{MontoTotal}$ | [frmVentasFiscales.cs:L548](file:///c:/jcdistribuciones/jcdistribuciones/CapaPresentacion/frmVentasFiscales.cs#L548) |
+| **Totales Nota Crédito**| $\text{MontoTotalNC} = \text{SubTotalNC} + \text{TotalIVANC}$ | [CN_Venta_Extensiones.cs:L324-L367](file:///c:/jcdistribuciones/jcdistribuciones/CapaNegocio/CN_Venta_Extensiones.cs#L324-L367) |

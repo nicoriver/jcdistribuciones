@@ -1,0 +1,248 @@
+{% extends "base.html" %}
+
+{% block title %}Tomar Pedido - {{ cliente.razon_social }}{% endblock %}
+
+{% block content %}
+<!-- CABECERA CLIENTE -->
+<div class="card border-0 shadow-sm bg-dark text-white mb-3">
+    <div class="card-body p-3">
+        <div class="d-flex justify-content-between align-items-center mb-1">
+            <span class="badge bg-warning text-dark fw-bold"><i class="bi bi-shop me-1"></i>Pre-Venta en Calle</span>
+            <a href="{% url 'portal:vendedor_seleccionar_cliente' %}" class="btn btn-outline-light btn-sm">
+                <i class="bi bi-people me-1"></i> Cambiar Cliente
+            </a>
+        </div>
+        <h4 class="fw-bold text-white mb-0">{{ cliente.razon_social }}</h4>
+        <div class="small text-light">
+            CUIT: <strong>{{ cliente.cuit }}</strong> | 
+            Dirección: <strong>{{ cliente.domicilio }}</strong> | 
+            Lista: <span class="badge bg-primary">{{ cliente.lista_precio_default.nombre|default:"Estándar" }}</span>
+        </div>
+    </div>
+</div>
+
+<!-- BUSCADOR Y FILTROS -->
+<div class="card mb-3 border-0 shadow-sm bg-white">
+    <div class="card-body p-2">
+        <form method="get" action="{% url 'portal:vendedor_tomar_pedido' cliente.id %}" class="row g-2">
+            <div class="col-7 col-md-8">
+                <input type="text" name="q" value="{{ query }}" class="form-control form-control-sm" placeholder="Buscar por código o producto...">
+            </div>
+            <div class="col-5 col-md-4 d-grid">
+                <button type="submit" class="btn btn-sm btn-primary fw-bold">
+                    <i class="bi bi-search me-1"></i> Buscar
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- TARJETAS ÁGILES DE PRODUCTOS -->
+<div class="row g-2 mb-5 pb-5">
+    {% for info in productos_info %}
+    {% with prod=info.producto precio=info.precio_final presentaciones=info.presentaciones %}
+    <div class="col-12 col-sm-6 col-lg-4">
+        <div class="card h-100 border-0 shadow-sm">
+            <div class="card-body p-2 d-flex flex-column">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="badge bg-secondary font-monospace">{{ prod.codigo }}</span>
+                    {% if prod.controla_stock %}
+                        <small class="text-muted"><i class="bi bi-box me-1"></i>Stock: <strong>{{ prod.stock_actual|floatformat:0 }}</strong></small>
+                    {% endif %}
+                </div>
+
+                <h6 class="card-title fw-bold text-dark mb-1 small">{{ prod.nombre }}</h6>
+                
+                <div class="d-flex justify-content-between align-items-baseline mb-2">
+                    <span class="text-muted small">Precio Venta:</span>
+                    <span class="fs-6 fw-bold text-success">${{ precio|floatformat:2 }}</span>
+                </div>
+
+                <div class="row g-1 align-items-center mt-auto">
+                    {% if presentaciones %}
+                    <div class="col-12 mb-1">
+                        <select class="form-select form-select-sm" id="pres-{{ prod.id }}">
+                            <option value="">Unidad Estándar</option>
+                            {% for pres in presentaciones %}
+                                <option value="{{ pres.id }}">{{ pres.nombre }} (x{{ pres.factor_unidades|floatformat:0 }})</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    {% endif %}
+
+                    <div class="col-4">
+                        <input type="number" 
+                               id="cant-{{ prod.id }}" 
+                               class="form-control form-control-sm text-center fw-bold" 
+                               value="1" 
+                               min="1" 
+                               step="1">
+                    </div>
+                    <div class="col-8 d-grid">
+                        <button class="btn btn-sm btn-primary fw-bold btn-add-cart" 
+                                data-producto-id="{{ prod.id }}"
+                                onclick="agregarItemVendedor({{ prod.id }})">
+                            <i class="bi bi-cart-plus me-1"></i> Agregar
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endwith %}
+    {% empty %}
+    <div class="col-12 py-4 text-center text-muted">
+        <i class="bi bi-box-seam display-3 d-block mb-2"></i>
+        <h6>No hay productos disponibles</h6>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- BARRA FLOTANTE INFERIOR MÓVIL (STICKY BOTTOM) -->
+<div class="fixed-bottom-bar d-flex justify-content-between align-items-center">
+    <div>
+        <small class="text-muted d-block">Subtotal Borrador</small>
+        <span class="fs-5 fw-bold text-dark">$<span id="vendedor-monto-total">{{ pedido.monto_total|floatformat:2 }}</span></span>
+        <span class="badge bg-danger ms-1" id="vendedor-cart-count">{{ pedido.items.count }}</span>
+    </div>
+    <button class="btn btn-warning fw-bold btn-action-touch" data-bs-toggle="offcanvas" data-bs-target="#offcanvasBorrador">
+        <i class="bi bi-bag-check-fill me-1"></i> Ver / Aprobar Pedido
+    </button>
+</div>
+
+<!-- OFFCANVAS MÓVIL / RESUMEN DE BORRADOR -->
+<div class="offcanvas offcanvas-bottom h-75" tabindex="-1" id="offcanvasBorrador">
+    <div class="offcanvas-header bg-dark text-white">
+        <h6 class="offcanvas-title fw-bold text-warning">
+            <i class="bi bi-receipt me-2"></i>Resumen de Pre-Venta - {{ cliente.razon_social }}
+        </h6>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas"></button>
+    </div>
+    <div class="offcanvas-body d-flex flex-column p-3">
+        {% if pedido.items.all %}
+        <div class="table-responsive flex-grow-1 mb-3">
+            <table class="table table-sm align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Artículo</th>
+                        <th class="text-center">Cant.</th>
+                        <th class="text-end">Subtotal</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in pedido.items.all %}
+                    <tr>
+                        <td>
+                            <div class="fw-bold small">{{ item.nombre_producto_historico }}</div>
+                            {% if item.nombre_presentacion_historico %}
+                                <small class="text-muted">{{ item.nombre_presentacion_historico }}</small>
+                            {% endif %}
+                        </td>
+                        <td class="text-center fw-bold">{{ item.cantidad|floatformat:0 }}</td>
+                        <td class="text-end fw-bold text-success">${{ item.subtotal_final|floatformat:2 }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="border-top pt-2">
+            <div class="d-flex justify-content-between mb-1">
+                <span class="text-muted">Subtotal Neto:</span>
+                <span class="fw-bold">${{ pedido.monto_subtotal_neto|floatformat:2 }}</span>
+            </div>
+            <div class="d-flex justify-content-between mb-2">
+                <span class="text-muted">IVA Total:</span>
+                <span class="fw-bold">${{ pedido.monto_iva_total|floatformat:2 }}</span>
+            </div>
+            <div class="d-flex justify-content-between mb-3">
+                <span class="fs-5 fw-bold">Total Final:</span>
+                <span class="fs-4 fw-bold text-success">${{ pedido.monto_total|floatformat:2 }}</span>
+            </div>
+
+            <form method="post" action="{% url 'portal:vendedor_confirmar_preventa' pedido.id %}" onsubmit="return confirm('¿Confirmar y aprobar pedido para {{ cliente.razon_social }}?')">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-warning btn-action-touch w-100 fw-bold fs-5">
+                    <i class="bi bi-check-circle-fill me-1"></i> Finalizar y Aprobar Pedido
+                </button>
+            </form>
+        </div>
+        {% else %}
+        <div class="text-center py-5">
+            <i class="bi bi-cart-x display-3 text-muted mb-2 d-block"></i>
+            <h6>El borrador está vacío</h6>
+            <p class="small text-muted">Agrega productos desde el catálogo móvil.</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+{% block extra_js %}
+<script>
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+
+function agregarItemVendedor(productoId) {
+    const cantInput = document.getElementById(`cant-${productoId}`);
+    const presSelect = document.getElementById(`pres-${productoId}`);
+    
+    const cantidad = cantInput ? cantInput.value : 1;
+    const presentacionId = presSelect ? presSelect.value : null;
+
+    const csrftoken = getCookie('csrftoken');
+
+    fetch("{% url 'portal:vendedor_agregar_item_api' %}", {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': csrftoken
+        },
+        body: JSON.stringify({
+            cliente_id: {{ cliente.id }},
+            producto_id: productoId,
+            presentacion_id: presentacionId ? parseInt(presentacionId) : null,
+            cantidad: parseFloat(cantidad)
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'ok') {
+            document.getElementById('vendedor-monto-total').innerText = parseFloat(data.monto_total).toFixed(2);
+            document.getElementById('vendedor-cart-count').innerText = data.cart_count;
+
+            const btn = document.querySelector(`button[data-producto-id="${productoId}"]`);
+            if (btn) {
+                const origHtml = btn.innerHTML;
+                btn.innerHTML = '<i class="bi bi-check-lg"></i> ¡Listo!';
+                btn.classList.remove('btn-primary');
+                btn.classList.add('btn-success');
+                setTimeout(() => {
+                    btn.innerHTML = origHtml;
+                    btn.classList.remove('btn-success');
+                    btn.classList.add('btn-primary');
+                }, 1000);
+            }
+        } else {
+            alert('Error: ' + data.message);
+        }
+    })
+    .catch(err => {
+        console.error(err);
+        alert('Ocurrió un error al agregar el producto.');
+    });
+}
+</script>
+{% endblock %}
+{% endblock %}

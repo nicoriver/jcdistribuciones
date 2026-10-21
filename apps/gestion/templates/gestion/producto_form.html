@@ -1,0 +1,249 @@
+{% extends 'gestion/base_gestion.html' %}
+
+{% block title %}{{ titulo }} - Panel de Gestión{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="h3 fw-bold mb-0 text-dark"><i class="bi bi-box-seam me-2"></i>{{ titulo }}</h2>
+        <p class="text-muted small mb-0">Complete la información general del producto y configure las condiciones de precio por lista</p>
+    </div>
+    <a href="{% url 'gestion:productos_list' %}" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left me-1"></i> Volver a la Lista
+    </a>
+</div>
+
+<form method="post" class="needs-validation" novalidate>
+    {% csrf_token %}
+
+    {% if form.non_field_errors %}
+    <div class="alert alert-danger shadow-sm mb-4">
+        {% for error in form.non_field_errors %}
+            <p class="mb-0">{{ error }}</p>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <div class="row g-4">
+        <!-- Datos Principales del Producto -->
+        <div class="col-lg-7">
+            <div class="card border-0 shadow-sm mb-4">
+                <div class="card-header bg-white py-3 border-0">
+                    <h5 class="card-title fw-bold text-dark mb-0"><i class="bi bi-info-circle me-2 text-primary"></i>Información General</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Código Interno *</label>
+                            {{ form.codigo }}
+                            {% if form.codigo.errors %}<div class="text-danger small">{{ form.codigo.errors.0 }}</div>{% endif %}
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Código de Barras</label>
+                            {{ form.codigo_barra }}
+                            {% if form.codigo_barra.errors %}<div class="text-danger small">{{ form.codigo_barra.errors.0 }}</div>{% endif %}
+                        </div>
+
+                        <div class="col-12">
+                            <label class="form-label fw-semibold">Nombre del Producto *</label>
+                            {{ form.nombre }}
+                            {% if form.nombre.errors %}<div class="text-danger small">{{ form.nombre.errors.0 }}</div>{% endif %}
+                        </div>
+
+                        <div class="col-12">
+                            <label class="form-label fw-semibold">Descripción</label>
+                            {{ form.descripcion }}
+                            {% if form.descripcion.errors %}<div class="text-danger small">{{ form.descripcion.errors.0 }}</div>{% endif %}
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Categoría *</label>
+                            {{ form.categoria }}
+                            {% if form.categoria.errors %}<div class="text-danger small">{{ form.categoria.errors.0 }}</div>{% endif %}
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Marca</label>
+                            {{ form.marca }}
+                            {% if form.marca.errors %}<div class="text-danger small">{{ form.marca.errors.0 }}</div>{% endif %}
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Alícuota IVA *</label>
+                            {{ form.alicuota_iva }}
+                            {% if form.alicuota_iva.errors %}<div class="text-danger small">{{ form.alicuota_iva.errors.0 }}</div>{% endif %}
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Costo Base ($) *</label>
+                            {{ form.costo }}
+                            {% if form.costo.errors %}<div class="text-danger small">{{ form.costo.errors.0 }}</div>{% endif %}
+                        </div>
+
+                        <div class="col-12"><hr class="my-2 text-muted"></div>
+
+                        <div class="col-md-4">
+                            <div class="form-check form-switch pt-2">
+                                {{ form.controla_stock }}
+                                <label class="form-check-label fw-semibold" for="{{ form.controla_stock.id_for_label }}">Controla Stock</label>
+                            </div>
+                        </div>
+
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">Stock Actual</label>
+                            {{ form.stock_actual }}
+                            {% if form.stock_actual.errors %}<div class="text-danger small">{{ form.stock_actual.errors.0 }}</div>{% endif %}
+                        </div>
+
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">Punto Reposición</label>
+                            {{ form.punto_reposicion }}
+                            {% if form.punto_reposicion.errors %}<div class="text-danger small">{{ form.punto_reposicion.errors.0 }}</div>{% endif %}
+                        </div>
+
+                        <div class="col-12">
+                            <div class="form-check form-switch">
+                                {{ form.activo }}
+                                <label class="form-check-label fw-semibold" for="{{ form.activo.id_for_label }}">Producto Activo en Catálogo</label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Ajuste de Precios por Lista -->
+        <div class="col-lg-5">
+            <div class="card border-0 shadow-sm mb-4">
+                <div class="card-header bg-white py-3 border-0">
+                    <h5 class="card-title fw-bold text-dark mb-0"><i class="bi bi-tags me-2 text-success"></i>Precios por Lista</h5>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted small">Especifique el recargo o descuento sobre el costo base (con IVA) para cada lista comercial activa.</p>
+
+                    <div class="d-flex flex-column gap-3">
+                        {% if precios_info %}
+                            {% for item in precios_info %}
+                            <div class="p-3 border rounded bg-light">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <strong class="text-dark">{{ item.lista.nombre }}</strong>
+                                    <span class="badge bg-primary fs-6" id="badge-precio-lista-{{ item.lista.id }}">${{ item.precio_final|floatformat:2 }}</span>
+                                </div>
+                                <div class="row g-2">
+                                    <div class="col-6">
+                                        <label class="form-label small text-muted mb-1">Recargo (%)</label>
+                                        <input type="number" step="0.01" name="recargo_lista_{{ item.lista.id }}" value="{{ item.recargo }}" class="form-control form-control-sm">
+                                    </div>
+                                    <div class="col-6">
+                                        <label class="form-label small text-muted mb-1">Descuento (%)</label>
+                                        <input type="number" step="0.01" name="descuento_lista_{{ item.lista.id }}" value="{{ item.descuento }}" class="form-control form-control-sm">
+                                    </div>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        {% else %}
+                            {% for lista in listas_activas %}
+                            <div class="p-3 border rounded bg-light">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <strong class="text-dark">{{ lista.nombre }}</strong>
+                                    <span class="badge bg-primary fs-6" id="badge-precio-lista-{{ lista.id }}">$0.00</span>
+                                </div>
+                                <div class="row g-2">
+                                    <div class="col-6">
+                                        <label class="form-label small text-muted mb-1">Recargo (%)</label>
+                                        <input type="number" step="0.01" name="recargo_lista_{{ lista.id }}" value="0.00" class="form-control form-control-sm">
+                                    </div>
+                                    <div class="col-6">
+                                        <label class="form-label small text-muted mb-1">Descuento (%)</label>
+                                        <input type="number" step="0.01" name="descuento_lista_{{ lista.id }}" value="0.00" class="form-control form-control-sm">
+                                    </div>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Botones de Acción -->
+            <div class="card border-0 shadow-sm">
+                <div class="card-body d-flex gap-2">
+                    <button type="submit" class="btn btn-primary fw-bold flex-grow-1 py-2">
+                        <i class="bi bi-check-circle me-1"></i> Guardar Producto
+                    </button>
+                    <a href="{% url 'gestion:productos_list' %}" class="btn btn-outline-secondary py-2">
+                        Cancelar
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</form>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const inputCosto = document.querySelector('[name="costo"]') || document.getElementById('id_costo');
+    const selectAlicuota = document.querySelector('[name="alicuota_iva"]') || document.getElementById('id_alicuota_iva');
+
+    function parseVal(el) {
+        if (!el) return 0;
+        const v = parseFloat(el.value);
+        return isNaN(v) ? 0 : v;
+    }
+
+    function getIvaPorcentaje() {
+        if (!selectAlicuota) return 21.0;
+        const selectedOpt = selectAlicuota.options[selectAlicuota.selectedIndex];
+        if (!selectedOpt) return 21.0;
+        const txt = selectedOpt.textContent || selectedOpt.innerText || '';
+        const match = txt.match(/(\d+(?:\.\d+)?)/);
+        if (match) {
+            return parseFloat(match[1]);
+        }
+        return 21.0;
+    }
+
+    function recalcularPreciosLista() {
+        const costo = parseVal(inputCosto);
+        const iva = getIvaPorcentaje();
+
+        const recargoInputs = document.querySelectorAll('[name^="recargo_lista_"]');
+        recargoInputs.forEach(inputRecargo => {
+            const listaId = inputRecargo.name.replace('recargo_lista_', '');
+            const inputDescuento = document.querySelector('[name="descuento_lista_' + listaId + '"]');
+            const badgeSpan = document.getElementById('badge-precio-lista-' + listaId);
+
+            const recargo = parseVal(inputRecargo);
+            const descuento = parseVal(inputDescuento);
+
+            const subtotalNeto = costo * (1 + (recargo / 100));
+            const conIva = subtotalNeto * (1 + (iva / 100));
+            const precioFinal = conIva * (1 - (descuento / 100));
+
+            if (badgeSpan) {
+                badgeSpan.textContent = '$' + (isNaN(precioFinal) ? 0 : precioFinal).toFixed(2);
+            }
+        });
+    }
+
+    if (inputCosto) {
+        inputCosto.addEventListener('input', recalcularPreciosLista);
+        inputCosto.addEventListener('change', recalcularPreciosLista);
+    }
+    if (selectAlicuota) {
+        selectAlicuota.addEventListener('change', recalcularPreciosLista);
+    }
+
+    const allPriceInputs = document.querySelectorAll('[name^="recargo_lista_"], [name^="descuento_lista_"]');
+    allPriceInputs.forEach(el => {
+        el.addEventListener('input', recalcularPreciosLista);
+        el.addEventListener('change', recalcularPreciosLista);
+    });
+
+    recalcularPreciosLista();
+});
+</script>
+{% endblock %}
+

@@ -1,0 +1,172 @@
+{% extends "base.html" %}
+
+{% block title %}Hoja de Ruta y Planilla de Carga - JC Distribuciones{% endblock %}
+
+{% block content %}
+<div class="row mb-3 align-items-center">
+    <div class="col-12 col-md-8">
+        <h3 class="fw-bold mb-1 text-dark">
+            <i class="bi bi-truck me-2 text-primary"></i>Hoja de Ruta & Planilla de Carga
+        </h3>
+        <p class="text-muted small mb-0">Consolidado de mercadería para depósito y orden de entrega para el chofer.</p>
+    </div>
+</div>
+
+<!-- FILTROS DE LOGÍSTICA -->
+<div class="card border-0 shadow-sm mb-4 bg-white">
+    <div class="card-body p-3">
+        <form method="get" action="{% url 'reportes:hoja_ruta' %}" class="row g-2 align-items-end">
+            <div class="col-12 col-sm-6 col-md-3">
+                <label for="zona" class="form-label small fw-bold">Zona Logística:</label>
+                <select name="zona" id="zona" class="form-select form-select-sm">
+                    <option value="">-- Todas las Zonas --</option>
+                    {% for z in zonas %}
+                        <option value="{{ z.id }}" {% if zona_actual == z.id %}selected{% endif %}>{{ z.nombre }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-12 col-sm-6 col-md-3">
+                <label for="dia" class="form-label small fw-bold">Día de Reparto:</label>
+                <select name="dia" id="dia" class="form-select form-select-sm">
+                    <option value="">-- Todos los Días --</option>
+                    {% for d_val, d_name in dias_reparto %}
+                        <option value="{{ d_val }}" {% if dia_actual == d_val %}selected{% endif %}>{{ d_name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-12 col-sm-6 col-md-3">
+                <label for="fecha" class="form-label small fw-bold">Fecha Emisión Remito:</label>
+                <input type="date" name="fecha" id="fecha" value="{{ fecha_actual }}" class="form-control form-control-sm">
+            </div>
+            <div class="col-12 col-sm-6 col-md-3 d-grid gap-1">
+                <button type="submit" class="btn btn-primary btn-sm fw-bold">
+                    <i class="bi bi-filter me-1"></i> Filtrar Ruta
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% if remitos %}
+<!-- BOTÓN IMPRIMIR HOJA DE RUTA A4 -->
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <span class="fw-bold text-secondary">
+        Se encontraron <strong>{{ remitos.count }}</strong> remito(s) de entrega.
+    </span>
+    <a href="{% url 'reportes:imprimir_hoja_ruta' %}?zona={{ zona_actual|default:'' }}&dia={{ dia_actual|default:'' }}&fecha={{ fecha_actual|default:'' }}" 
+       target="_blank" 
+       class="btn btn-warning fw-bold btn-sm">
+        <i class="bi bi-printer-fill me-1"></i> Imprimir Hoja de Ruta A4
+    </a>
+</div>
+
+<!-- NAVEGACIÓN PESTAÑAS (PLANILLA DE CARGA vs PARADAS DE ENTREGA) -->
+<ul class="nav nav-tabs mb-3" id="rutaTabs" role="tablist">
+    <li class="nav-item" role="presentation">
+        <button class="nav-link active fw-bold" id="carga-tab" data-bs-toggle="tab" data-bs-target="#carga" type="button" role="tab">
+            <i class="bi bi-box-seam me-1 text-warning"></i> Planilla de Carga Camión ({{ planilla_carga|length }})
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link fw-bold" id="paradas-tab" data-bs-toggle="tab" data-bs-target="#paradas" type="button" role="tab">
+            <i class="bi bi-geo-alt-fill me-1 text-danger"></i> Paradas y Clientes ({{ remitos.count }})
+        </button>
+    </li>
+</ul>
+
+<div class="tab-content" id="rutaTabsContent">
+    <!-- PESTAÑA 1: PLANILLA DE CARGA CONSOLIDADA -->
+    <div class="tab-pane fade show active" id="carga" role="tabpanel">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white py-3">
+                <h6 class="mb-0 fw-bold"><i class="bi bi-boxes me-2 text-primary"></i>Mercadería Total a Cargar en Depósito</h6>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>#</th>
+                                <th>Cód. Producto</th>
+                                <th>Descripción del Artículo</th>
+                                <th>Presentación</th>
+                                <th class="text-center">Cant. Solicitada</th>
+                                <th class="text-end">Unidades Base Totales</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in planilla_carga %}
+                            <tr>
+                                <td class="text-muted small">{{ forloop.counter }}</td>
+                                <td class="font-monospace small">{{ item.codigo }}</td>
+                                <td class="fw-bold text-dark">{{ item.descripcion }}</td>
+                                <td><span class="badge bg-secondary">{{ item.presentacion }}</span></td>
+                                <td class="text-center fs-6 fw-bold text-primary">{{ item.cantidad|floatformat:0 }}</td>
+                                <td class="text-end fs-6 fw-bold text-success">{{ item.unidades_base|floatformat:0 }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- PESTAÑA 2: LISTA DE PARADAS DE ENTREGA -->
+    <div class="tab-pane fade" id="paradas" role="tabpanel">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white py-3">
+                <h6 class="mb-0 fw-bold"><i class="bi bi-signpost-split me-2 text-danger"></i>Paradas y Remitos de Entrega</h6>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Orden</th>
+                                <th>Cliente / Razón Social</th>
+                                <th>Dirección & Localidad</th>
+                                <th>N° Remito</th>
+                                <th>Vendedor</th>
+                                <th class="text-end">Monto Valor Declarado</th>
+                                <th class="text-center">Acción</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for r in remitos %}
+                            <tr>
+                                <td class="fw-bold text-muted">{{ forloop.counter }}</td>
+                                <td>
+                                    <div class="fw-bold text-dark">{{ r.cliente.razon_social }}</div>
+                                    <small class="text-muted">CUIT: {{ r.cliente.cuit }}</small>
+                                </td>
+                                <td>
+                                    <div>{{ r.cliente.domicilio }}</div>
+                                    <small class="text-muted">{{ r.cliente.localidad.nombre|default:"-" }} ({{ r.cliente.zona.nombre|default:"Sin Zona" }})</small>
+                                </td>
+                                <td><span class="badge bg-dark font-monospace">{{ r.numero_remito }}</span></td>
+                                <td class="small">{{ r.vendedor.nombre|default:"Casa Central" }}</td>
+                                <td class="text-end fw-bold text-success">${{ r.monto_total|floatformat:2 }}</td>
+                                <td class="text-center">
+                                    <a href="{% url 'comprobantes:imprimir_remito' r.id %}" target="_blank" class="btn btn-outline-secondary btn-sm" title="Imprimir Remito">
+                                        <i class="bi bi-printer"></i>
+                                    </a>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% else %}
+<div class="card border-0 shadow-sm py-5 text-center">
+    <i class="bi bi-truck-front display-1 text-muted mb-3 d-block"></i>
+    <h5 class="text-secondary">No se encontraron remitos emitidos para los filtros seleccionados</h5>
+    <p class="small text-muted mb-0">Selecciona otra Zona o Día de Reparto para generar la planilla de carga.</p>
+</div>
+{% endif %}
+{% endblock %}

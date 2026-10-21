@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+
+{% block title %}Iniciar Sesión - JC Distribuciones{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center align-items-center min-vh-75 mt-4">
+    <div class="col-12 col-sm-10 col-md-8 col-lg-5">
+        <div class="card shadow-sm border-0">
+            <div class="card-header bg-dark text-white text-center py-3 rounded-top">
+                <h4 class="mb-0 text-warning fw-bold">
+                    <i class="bi bi-box-seam-fill me-2"></i>JC Distribuciones
+                </h4>
+                <small class="text-muted text-light">Portal Comercial Mayorista</small>
+            </div>
+            <div class="card-body p-4">
+                <form method="post" action="{% url 'portal:login' %}">
+                    {% csrf_token %}
+                    
+                    <div class="mb-3">
+                        <label for="identificador" class="form-label fw-semibold">
+                            <i class="bi bi-card-heading me-1"></i> CUIT (Clientes) o Usuario/Email (Internos)
+                        </label>
+                        <input type="text" 
+                               name="identificador" 
+                               id="identificador" 
+                               class="form-control form-control-lg" 
+                               placeholder="Ej: 30-12345678-9 ó usuario" 
+                               required 
+                               autofocus>
+                        <div class="form-text">Si eres cliente, ingresa tu CUIT de 11 dígitos.</div>
+                    </div>
+
+                    <div class="mb-4">
+                        <label for="password" class="form-label fw-semibold">
+                            <i class="bi bi-key-fill me-1"></i> Contraseña
+                        </label>
+                        <input type="password" 
+                               name="password" 
+                               id="password" 
+                               class="form-control form-control-lg" 
+                               placeholder="••••••••" 
+                               required>
+                    </div>
+
+                    <div class="d-grid gap-2">
+                        <button type="submit" class="btn btn-warning btn-action-touch btn-lg fw-bold">
+                            <i class="bi bi-box-arrow-in-right me-1"></i> Ingresar al Portal
+                        </button>
+                    </div>
+                </form>
+            </div>
+            <div class="card-footer bg-light text-center py-3 text-muted small">
+                <i class="bi bi-shield-lock me-1"></i> Sistema Integrado de Gestión y Pre-Venta Mayorista
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

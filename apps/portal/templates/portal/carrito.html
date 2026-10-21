@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+
+{% block title %}Carrito de Compras - JC Distribuciones{% endblock %}
+
+{% block content %}
+<div class="row mb-3 align-items-center">
+    <div class="col-8">
+        <h3 class="fw-bold mb-0"><i class="bi bi-cart3 me-2 text-warning"></i>Mi Carrito (Borrador)</h3>
+        <p class="text-muted small mb-0">Pedido N° <strong>{{ pedido.numero_pedido }}</strong></p>
+    </div>
+    <div class="col-4 text-end">
+        <a href="{% url 'portal:catalogo' %}" class="btn btn-outline-primary btn-sm">
+            <i class="bi bi-arrow-left me-1"></i> Seguir Comprando
+        </a>
+    </div>
+</div>
+
+<!-- BARRA DE MONTO MÍNIMO DE PEDIDO -->
+<div class="card mb-4 border-0 shadow-sm">
+    <div class="card-body p-3">
+        <div class="d-flex justify-content-between align-items-center mb-1">
+            <span class="fw-bold small">
+                <i class="bi bi-info-circle-fill me-1 text-primary"></i> Monto Mínimo de Pedido:
+            </span>
+            <span class="fw-bold text-dark">${{ monto_minimo|floatformat:2 }}</span>
+        </div>
+        <div class="progress mb-2" style="height: 12px;">
+            <div class="progress-bar {% if cumple_minimo %}bg-success{% else %}bg-warning progress-bar-striped progress-bar-animated{% endif %}" 
+                 role="progressbar" 
+                 style="width: {{ progreso_minimo }}%;" 
+                 aria-valuenow="{{ progreso_minimo }}" 
+                 aria-valuemin="0" 
+                 aria-valuemax="100">
+            </div>
+        </div>
+        {% if cumple_minimo %}
+            <small class="text-success fw-bold d-block"><i class="bi bi-check-circle-fill me-1"></i> ¡Excelente! Has alcanzado el monto mínimo para enviar tu pedido.</small>
+        {% else %}
+            <small class="text-danger fw-semibold d-block"><i class="bi bi-exclamation-triangle-fill me-1"></i> Te faltan ${{ monto_minimo|add:pedido.monto_total|floatformat:2 }} para alcanzar el mínimo exigido.</small>
+        {% endif %}
+    </div>
+</div>
+
+<div class="row g-4">
+    <!-- TABLA DE RENGLONES / ITEMS -->
+    <div class="col-12 col-lg-8">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white py-3">
+                <h6 class="mb-0 fw-bold"><i class="bi bi-list-check me-2"></i>Artículos Seleccionados ({{ pedido.items.count }})</h6>
+            </div>
+            <div class="card-body p-0">
+                {% if pedido.items.all %}
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Producto</th>
+                                <th class="text-end">Precio Unit.</th>
+                                <th class="text-center" style="width: 140px;">Cantidad</th>
+                                <th class="text-end">Subtotal</th>
+                                <th class="text-center" style="width: 50px;"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in pedido.items.all %}
+                            <tr>
+                                <td>
+                                    <div class="fw-bold text-dark">{{ item.nombre_producto_historico }}</div>
+                                    <small class="text-muted d-block">
+                                        Cód: {{ item.codigo_producto_historico }}
+                                        {% if item.nombre_presentacion_historico %}
+                                            | Presentación: {{ item.nombre_presentacion_historico }}
+                                        {% endif %}
+                                    </small>
+                                </td>
+                                <td class="text-end fw-semibold">
+                                    ${{ item.precio_unitario_neto_historico|floatformat:2 }}
+                                </td>
+                                <td>
+                                    <form method="post" action="{% url 'portal:carrito' %}" class="d-flex align-items-center">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="action" value="update_quantity">
+                                        <input type="hidden" name="item_id" value="{{ item.id }}">
+                                        <input type="number" 
+                                               name="cantidad" 
+                                               value="{{ item.cantidad|floatformat:0 }}" 
+                                               min="1" 
+                                               class="form-control form-control-sm text-center fw-bold me-1" 
+                                               onchange="this.form.submit()">
+                                    </form>
+                                </td>
+                                <td class="text-end fw-bold text-success">
+                                    ${{ item.subtotal_neto|floatformat:2 }}
+                                </td>
+                                <td class="text-center">
+                                    <a href="{% url 'portal:eliminar_item_carrito' item.id %}" 
+                                       class="btn btn-outline-danger btn-sm border-0" 
+                                       title="Eliminar artículo"
+                                       onclick="return confirm('¿Eliminar {{ item.nombre_producto_historico }} del carrito?')">
+                                        <i class="bi bi-trash-fill"></i>
+                                    </a>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="text-center py-5">
+                    <i class="bi bi-cart-x display-3 text-muted mb-3 d-block"></i>
+                    <h5 class="text-secondary">Tu carrito está vacío</h5>
+                    <p class="small text-muted mb-3">Agrega productos desde el catálogo para iniciar tu pedido.</p>
+                    <a href="{% url 'portal:catalogo' %}" class="btn btn-primary fw-bold">
+                        <i class="bi bi-grid-fill me-1"></i> Ir al Catálogo
+                    </a>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- RESUMEN Y ENVÍO DE PEDIDO -->
+    <div class="col-12 col-lg-4">
+        <div class="card border-0 shadow-sm sticky-top" style="top: 80px;">
+            <div class="card-header bg-dark text-white py-3">
+                <h6 class="mb-0 fw-bold text-warning"><i class="bi bi-receipt me-2"></i>Resumen del Pedido</h6>
+            </div>
+            <div class="card-body p-3">
+                <div class="d-flex justify-content-between mb-2">
+                    <span class="text-muted">Subtotal Neto:</span>
+                    <span class="fw-bold">${{ pedido.monto_subtotal_neto|floatformat:2 }}</span>
+                </div>
+                <div class="d-flex justify-content-between mb-2">
+                    <span class="text-muted">IVA Total (21% / 10.5%):</span>
+                    <span class="fw-bold">${{ pedido.monto_iva_total|floatformat:2 }}</span>
+                </div>
+                <hr>
+                <div class="d-flex justify-content-between mb-3">
+                    <span class="fs-5 fw-bold">Total Final:</span>
+                    <span class="fs-4 fw-bold text-success">${{ pedido.monto_total|floatformat:2 }}</span>
+                </div>
+
+                {% if pedido.items.all %}
+                <form method="post" action="{% url 'portal:enviar_pedido' %}">
+                    {% csrf_token %}
+                    <div class="mb-3">
+                        <label for="observaciones_cliente" class="form-label fw-semibold small">
+                            <i class="bi bi-chat-left-text me-1"></i> Observaciones (Opcional):
+                        </label>
+                        <textarea name="observaciones_cliente" 
+                                  id="observaciones_cliente" 
+                                  rows="3" 
+                                  class="form-control form-control-sm" 
+                                  placeholder="Notas para el vendedor o entrega..."></textarea>
+                    </div>
+
+                    <div class="d-grid">
+                        <button type="submit" 
+                                class="btn btn-warning btn-action-touch btn-lg fw-bold" 
+                                {% if not cumple_minimo %}disabled title="Debes alcanzar el monto mínimo de ${{ monto_minimo|floatformat:2 }}"{% endif %}>
+                            <i class="bi bi-send-check-fill me-1"></i> Confirmar y Enviar Pedido
+                        </button>
+                    </div>
+                </form>
+                {% endif %}
+            </div>
+            <div class="card-footer bg-light py-2 text-center text-muted small">
+                Vendedor asignado: <strong>{{ cliente.vendedor.nombre|default:"Casa Central" }}</strong>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

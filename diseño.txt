@@ -1,0 +1,115 @@
+# Documento de Especificación de Requerimientos del Sistema (SRS)
+## Sistema de Gestión Comercial y Control de Inventarios - JC Distribuciones
+
+---
+
+## 1. Introducción
+
+### 1.1 Propósito
+El presente documento tiene como objetivo especificar detalladamente los requerimientos funcionales, requerimientos no funcionales, reglas de negocio y alcance del sistema de gestión comercial e inventarios **JC Distribuciones**. Este documento sirve como guía para desarrolladores, auditores de software y usuarios finales.
+
+### 1.2 Alcance del Sistema
+**JC Distribuciones** es un sistema integral de administración comercial orientado al comercio mayorista y minorista. Cubre el ciclo completo de operaciones comerciales:
+- Gestión de usuarios, roles y matriz de permisos granulares por menú.
+- Administración de clientes, proveedores y catálogos de productos.
+- Gestión avanzada de listas de precios (Mayorista, Minorista, Promocional) con reglas dinámicas de costos, utilidad, IVA y descuentos.
+- Registro y procesamiento de compras con actualización automática de stock y costos.
+- Emisión de comprobantes de ventas fiscales (Facturas A, B, Recibos, Remitos) y notas de crédito con discriminación o inclusión de IVA.
+- Control de inventario con puntos de reposición y alertas de stock mínimo.
+- Módulo de facturación e integración fiscal AFIP (diseñado e integrado en base de datos y capas de servicio).
+- Generación de reportes operativos, exportación a Excel y emisión de comprobantes impresos/HTML.
+
+---
+
+## 2. Actores del Sistema
+
+| Actor | Descripción | Permisos Principales |
+| :--- | :--- | :--- |
+| **Administrador** | Usuario con acceso total a la configuración y gestión del sistema. | Gestión de usuarios, asignación de roles y permisos, mantenimiento de catálogo, listas de precios, compras, ventas, reportes y configuración del negocio. |
+| **Empleado / Vendedor** | Usuario operativo encargado del punto de venta y atención a clientes. | Emisión de ventas/comprobantes, consulta de stock, registro de clientes y visualización restringida de reportes según asignación. |
+| **Sistema AFIP (Externo)** | Web Service fiscal externo de la AFIP para autorización electrónica de comprobantes (Facturación Electrónica ARCA/AFIP). | Recepción de solicitudes de autorización, validación de CUIT/IVA y devolución de CAE / Vencimiento. |
+
+---
+
+## 3. Requerimientos Funcionales (RF)
+
+### 3.1 Módulo de Autenticación y Seguridad (RF-01)
+- **RF-01.1 Inicio de Sesión**: El sistema debe solicitar credenciales de acceso (Nro. Documento/Usuario y Clave) para ingresar a la aplicación ([Login.cs](file:///c:/jcdistribuciones/jcdistribuciones/CapaPresentacion/Login.cs)).
+- **RF-01.2 Control de Accesos por Rol**: El sistema debe habilitar o deshabilitar dinámicamente las opciones del menú principal ([Inicio.cs](file:///c:/jcdistribuciones/jcdistribuciones/CapaPresentacion/Inicio.cs)) según los registros de la tabla `PERMISO` asociados al `ROL` del usuario.
+- **RF-01.3 Gestión de Usuarios**: Permitir el alta, modificación y eliminación lógica de usuarios ([frmUsuarios.cs](file:///c:/jcdistribuciones/jcdistribuciones/CapaPresentacion/frmUsuarios.cs)). Se debe validar la unicidad del número de documento.
+- **RF-01.4 Encriptación de Contraseñas**: El sistema debe almacenar las claves de usuario cifradas de forma segura en la base de datos (identificado pendiente según `modulos.xlsx`).
+
+### 3.2 Módulo de Clientes y Proveedores (RF-02)
+- **RF-02.1 Gestión de Clientes**: Registrar, modificar y consultar datos extendidos de clientes: Apellido, Nombre, Razón Social, DNI, CUIT, Condición IVA, Domicilio, Zona, Localidad, Provincia, Teléfono, Email, Vendedor asignado y Geolocalización (Latitud/Longitud) ([frmClientes.cs](file:///c:/jcdistribuciones/jcdistribuciones/CapaPresentacion/frmClientes.cs), [script_clientes.sql](file:///c:/jcdistribuciones/jcdistribuciones/QuerySQL/script_clientes.sql)).
+- **RF-02.2 Gestión de Proveedores**: Registrar y mantener la información de contacto y fiscal de proveedores ([frmProveedores.cs](file:///c:/jcdistribuciones/jcdistribuciones/CapaPresentacion/frmProveedores.cs)).
+- **RF-02.3 Búsqueda Modal**: Proveer ventanas modales de selección rápida ([mdCliente.cs](file:///c:/jcdistribuciones/jcdistribuciones/CapaPresentacion/Modales/mdCliente.cs), [mdProveedor.cs](file:///c:/jcdistribuciones/jcdistribuciones/CapaPresentacion/Modales/mdProveedor.cs)) integradas en los formularios de venta y compra.
+
+### 3.3 Módulo de Productos e Inventario (RF-03)
+- **RF-03.1 Catálogo de Productos**: Gestionar el maestro de artículos incluyendo Código Interno, Código de Barras, Nombre, Descripción, Categoría, Indicador de Control de Stock, Punto de Reposición y Estado ([frmProducto.cs](file:///c:/jcdistribuciones/jcdistribuciones/CapaPresentacion/frmProducto.cs), [actualizacion_productos.sql](file:///c:/jcdistribuciones/jcdistribuciones/QuerySQL/actualizacion_productos.sql)).
+- **RF-03.2 Control de Stock y Alertas**: El sistema debe descontar automáticamente el stock al confirmar una venta (si `ControlaStock = 1`), incrementarlo al registrar una compra o devolución por Nota de Crédito, y alertar si la existencia es menor o igual al `Punto_reposicion`.
+- **RF-03.3 Asignación de IVA por Producto**: Permitir asociar al producto su alícuota de IVA correspondiente (10.5%, 21.0%, 27.0%) desde el maestro de IVA (`IVA`).
+
+### 3.4 Módulo de Listas de Precios y Formación de Costos (RF-04)
+- **RF-04.1 Múltiples Listas de Precios**: Soportar la configuración de precios diferenciados por tipo de lista (ej: 1=Mayorista, 2=Minorista, 3=Promoción) ([crear_tabla_lista.sql](file:///c:/jcdistribuciones/jcdistribuciones/QuerySQL/crear_tabla_lista.sql), [CN_Lista.cs](file:///c:/jcdistribuciones/jcdistribuciones/CapaNegocio/CN_Lista.cs)).
+- **RF-04.2 Calculadora de Formación de Precio**: Permitir calcular el importe final de venta a partir del Costo base, aplicando secuencialmente:
+  1. `% Recargo / Utilidad`
+  2. `% IVA`
+  3. `% Descuento`
+  y guardar el precio calculado en la tabla `Lista` ([mdPreciosLista.cs](file:///c:/jcdistribuciones/jcdistribuciones/CapaPresentacion/Modales/mdPreciosLista.cs)).
+
+### 3.5 Módulo de Compras (RF-05)
+- **RF-05.1 Registro de Compras**: Permitir ingresar documentos de compra asociando un proveedor, tipo de comprobante, número de documento y el detalle de productos comprados ([frmCompras.cs](file:///c:/jcdistribuciones/jcdistribuciones/CapaPresentacion/frmCompras.cs)).
+- **RF-05.2 Actualización Automática de Precios y Existencias**: Al procesar la compra mediante `sp_RegistrarCompra`, se debe actualizar el stock del producto (`Stock = Stock + Cantidad`) y actualizar el `PrecioCompra` y `PrecioVenta` en el catálogo.
+
+### 3.6 Módulo de Ventas Fiscales y Comprobantes (RF-06)
+- **RF-06.1 Emisión de Comprobantes**: Permitir la confección interactiva de comprobantes de venta ([frmVentasFiscales.cs](file:///c:/jcdistribuciones/jcdistribuciones/CapaPresentacion/frmVentasFiscales.cs)) filtrando precios según el tipo de comprobante (Factura A -> Lista Mayorista/Discrimina IVA; Factura B -> Lista Minorista/IVA Incluido; Remito -> IVA 0).
+- **RF-06.2 Carga ágil por Lectura de Código de Barras**: Permitir al operador escanear el código de barras o código interno directamente en el `DataGridView` para incorporar el producto y avanzar con la tecla `Enter`.
+- **RF-06.3 Discriminación de IVA según Comprobante**:
+  - Si el comprobante discrimina IVA (`DiscriminaIVA = 1` - Factura A), calcular e imprimir por separado el Subtotal Neto, Total IVA y Monto Total.
+  - Si el comprobante no discrimina IVA (`DiscriminaIVA = 0` - Factura B / Recibo), incluir el impuesto dentro del precio unitario y ocultar los campos de IVA discriminado.
+- **RF-06.4 Registro Transaccional en Base de Datos**: Ejecutar de forma atómica la inserción del cabezal de venta (`VENTA`) y su detalle (`DETALLE_VENTA`) con actualización de existencias en base al procedimiento `usp_RegistrarVenta` o `sp_RegistrarVentaFiscal`.
+- **RF-06.5 Emisión e Impresión de Ticket/Factura**: Generar el documento visual en HTML/PDF mediante plantillas configurables ([GeneradorComprobantes.cs](file:///c:/jcdistribuciones/jcdistribuciones/CapaPresentacion/Reportes/GeneradorComprobantes.cs)).
+
+### 3.7 Módulo de Devoluciones y Notas de Crédito (RF-07)
+- **RF-07.1 Búsqueda de Comprobante Origen**: Permitir buscar una venta previa por su número de documento o por cliente ([frmDevolucionesCliente.cs](file:///c:/jcdistribuciones/jcdistribuciones/CapaPresentacion/frmDevolucionesCliente.cs), [CN_Venta_Extensiones.cs](file:///c:/jcdistribuciones/jcdistribuciones/CapaNegocio/CN_Venta_Extensiones.cs)).
+- **RF-07.2 Emisión de Nota de Crédito (NCA / NCB)**: Determinar automáticamente si corresponde Nota de Crédito A o B según el comprobante original y registrar la devolución restituyendo las cantidades al stock.
+
+### 3.8 Módulo de Reportes e Integración AFIP (RF-08)
+- **RF-08.1 Reportes Operativos**: Generar reportes de compras y ventas filtrados por rango de fechas, proveedor/cliente y producto, con exportación a Microsoft Excel ([frmReporteVentas.cs](file:///c:/jcdistribuciones/jcdistribuciones/CapaPresentacion/frmReporteVentas.cs), [frmReporteCompras.cs](file:///c:/jcdistribuciones/jcdistribuciones/CapaPresentacion/frmReporteCompras.cs)).
+- **RF-08.2 Conexión AFIP**: Estructura preparada para integración con Web Services de AFIP para facturación electrónica directa (CAE, código de barras fiscal QR/AFIP).
+
+---
+
+## 4. Requerimientos No Funcionales (RNF)
+
+### 4.1 Rendimiento y Eficiencia
+- **RNF-01**: Las búsquedas de productos y clientes en pantalla deben responder en menos de 1 segundo para catálogos de hasta 50,000 ítems.
+- **RNF-02**: El procesamiento transaccional de ventas y compras en SQL Server mediante `Stored Procedures` e `Indexación` debe ejecutarse en menos de 500 ms.
+
+### 4.2 Seguridad y Tolerancia a Fallos
+- **RNF-03 Integridad Transaccional**: Todas las operaciones que afecten múltiples tablas (Venta + Detalle + Stock) deben estar envueltas en bloques `BEGIN TRANSACTION ... COMMIT / ROLLBACK` en SQL Server para evitar inconsistencias de datos.
+- **RNF-04 Control de Integridad Referencial**: Impedir la eliminación física de usuarios, productos, clientes o proveedores que posean transacciones asociadas (compras o ventas).
+
+### 4.3 Usabilidad y Compatibilidad
+- **RNF-05 Interfaz Gráfica Adaptativa**: Formularios de Windows Forms optimizados para navegación por teclado (tecla `Enter` para desplazamiento entre celdas) facilitando la carga rápida en cajas/puntos de venta.
+- **RNF-06 Plataforma**: Compatible con la arquitectura Windows (.NET Framework 4.7.2+) con persistencia en Microsoft SQL Server 2012 o superior.
+
+---
+
+## 5. Matriz de Módulos y Estado de Desarrollo
+
+Derivado del análisis de código y del documento `modulos.xlsx`:
+
+| Módulo | Estado | Observaciones / Pendientes |
+| :--- | :--- | :--- |
+| **Módulo de Usuarios** | ⚠️ Parcial | Funcional. Falta codificar/encriptar la contraseña en hash (SHA256/BCrypt). |
+| **Módulo de Clientes** | ✅ Completo | Soporta datos fiscales, zonificación y geolocalización. |
+| **Módulo de Proveedores** | ✅ Completo | ABM completo con validaciones referenciales. |
+| **Módulo de Productos** | ✅ Completo | Soporta código de barras, stock mínimo, categoría e IVA. |
+| **Módulo de Precios** | ✅ Completo | Matriz multi-lista (Mayorista, Minorista, Promo) y calculadora de costos. |
+| **Módulo de Ventas** | ✅ Completo | Venta común y Ventas Fiscales (FA, FB, Recibos, Remitos). |
+| **Módulo de Devoluciones / NC**| ✅ Completo | Generación de Notas de Crédito A/B con ajuste de stock. |
+| **Módulo de Compras** | ✅ Completo | Carga de compras, detalle e impacto en stock/precios. |
+| **Módulo de Tablas** | ✅ Completo | Mantenimiento de Categorías, Provincias, Localidades, Zonas, IVA. |
+| **Módulo AFIP** | 🛠️ En Proceso | Estructura de comprobantes fiscales integrada en BD; pendiente conexión directa a WS. |
+| **Módulo de Reportes** | ✅ Completo | Consultas por fecha/entidad y exportación a Excel / HTML. |

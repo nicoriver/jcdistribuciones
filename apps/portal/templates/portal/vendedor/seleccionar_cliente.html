@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+
+{% block title %}Seleccionar Cliente - Pre-Venta en Calle{% endblock %}
+
+{% block content %}
+<div class="row mb-3 align-items-center">
+    <div class="col-8">
+        <h3 class="fw-bold mb-1 text-dark">
+            <i class="bi bi-person-bounding-box me-2 text-primary"></i>Seleccionar Cliente
+        </h3>
+        <p class="text-muted small mb-0">Pre-Venta Presencial | Cartera de <strong>{{ vendedor.nombre|default:user.nombre_completo }}</strong></p>
+    </div>
+    <div class="col-4 text-end">
+        <a href="{% url 'portal:vendedor_pedidos' %}" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-arrow-left me-1"></i> Cancelar
+        </a>
+    </div>
+</div>
+
+<!-- FILTROS DE BÚSQUEDA Y DÍA -->
+<div class="card border-0 shadow-sm mb-4 bg-white">
+    <div class="card-body p-3">
+        <form method="get" action="{% url 'portal:vendedor_seleccionar_cliente' %}" class="row g-2">
+            <div class="col-12 col-sm-6 col-md-5">
+                <div class="input-group">
+                    <span class="input-group-text bg-light"><i class="bi bi-search"></i></span>
+                    <input type="text" 
+                           name="q" 
+                           value="{{ query }}" 
+                           class="form-control" 
+                           placeholder="Buscar por Razón Social, CUIT o dirección...">
+                </div>
+            </div>
+            <div class="col-6 col-sm-3 col-md-3">
+                <select name="zona" class="form-select">
+                    <option value="">-- Todas las Zonas --</option>
+                    {% for z in zonas %}
+                        <option value="{{ z.id }}" {% if zona_actual == z.id %}selected{% endif %}>{{ z.nombre }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-6 col-sm-3 col-md-2">
+                <select name="dia" class="form-select">
+                    <option value="">-- Día Reparto --</option>
+                    {% for d_val, d_name in dias_reparto %}
+                        <option value="{{ d_val }}" {% if dia_actual == d_val %}selected{% endif %}>{{ d_name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-12 col-md-2 d-grid">
+                <button type="submit" class="btn btn-primary fw-bold">
+                    <i class="bi bi-filter me-1"></i> Buscar
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- LISTA DE CLIENTES -->
+<div class="row g-3">
+    {% for c in clientes %}
+    <div class="col-12 col-md-6 col-lg-4">
+        <div class="card border-0 shadow-sm h-100 client-card">
+            <div class="card-body p-3 d-flex flex-column">
+                <div class="d-flex justify-content-between align-items-start mb-2">
+                    <span class="badge bg-secondary font-monospace">CUIT: {{ c.cuit }}</span>
+                    {% if c.zona %}
+                        <span class="badge bg-info text-dark small">{{ c.zona.nombre }}</span>
+                    {% endif %}
+                </div>
+
+                <h5 class="fw-bold text-dark mb-1">{{ c.razon_social }}</h5>
+                {% if c.nombre_fantasia %}
+                    <small class="text-muted d-block mb-2"><i class="bi bi-shop me-1"></i>"{{ c.nombre_fantasia }}"</small>
+                {% endif %}
+
+                <div class="small text-muted mb-3 flex-grow-1">
+                    <div><i class="bi bi-geo-alt-fill me-1 text-danger"></i>{{ c.domicilio|default:"Sin dirección" }}</div>
+                    {% if c.localidad %}
+                        <div><i class="bi bi-building me-1"></i>{{ c.localidad.nombre }}</div>
+                    {% endif %}
+                    {% if c.dia_reparto %}
+                        <div class="mt-1 text-primary fw-semibold"><i class="bi bi-calendar-event me-1"></i>Reparto: {{ c.get_dia_reparto_display }}</div>
+                    {% endif %}
+                    <div class="mt-1"><i class="bi bi-receipt me-1"></i>Lista: <strong>{{ c.lista_precio_default.nombre|default:"Estándar" }}</strong></div>
+                </div>
+
+                <div class="d-grid mt-auto">
+                    <a href="{% url 'portal:vendedor_tomar_pedido' c.id %}" class="btn btn-warning btn-action-touch fw-bold fs-6">
+                        <i class="bi bi-cart-plus me-1"></i> Crear Pedido Presencial
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% empty %}
+    <div class="col-12 text-center py-5 text-muted">
+        <i class="bi bi-person-x display-1 d-block mb-3 text-secondary"></i>
+        <h5>No se encontraron clientes activos en tu cartera</h5>
+        <p class="small">Ajusta los términos de búsqueda o filtro por zona / día.</p>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}
