@@ -3,18 +3,67 @@
 import django.db.models.deletion
 from decimal import Decimal
 from django.db import migrations, models
+from django.core.management.color import no_style
 
 
 def migrar_datos_listas_y_productos(apps, schema_editor):
+    db_alias = schema_editor.connection.alias
     connection = schema_editor.connection
+
     with connection.cursor() as cursor:
-        # Copiar listas de productos_listaprecio a productos_tipolistaprecio
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='productos_listaprecio'")
-        if cursor.fetchone():
-            cursor.execute("""
-                INSERT OR IGNORE INTO productos_tipolistaprecio (id, nombre, descripcion, activa)
-                SELECT id, nombre, descripcion, activa FROM productos_listaprecio
-            """)
+        table_names = connection.introspection.table_names(cursor)
+
+    if 'productos_listaprecio' not in table_names:
+        return
+
+    ListaPrecio = apps.get_model('productos', 'ListaPrecio')
+    TipoListaPrecio = apps.get_model('productos', 'TipoListaPrecio')
+
+    # Copiar listas de productos_listaprecio a productos_tipolistaprecio de forma portable
+    for old_lista in ListaPrecio.objects.using(db_alias).all():
+        if not TipoListaPrecio.objects.using(db_alias).filter(id=old_lista.id).exists():
+            TipoListaPrecio.objects.using(db_alias).create(
+                id=old_lista.id,
+                nombre=old_lista.nombre,
+                descripcion=old_lista.descripcion or '',
+                activa=old_lista.activa,
+            )
+
+    # En motores con secuencias (ej. PostgreSQL), sincronizar el valor de la secuencia con el ID máximo copiado
+    reset_queries = connection.ops.sequence_reset_sql(no_style(), [TipoListaPrecio])
+    if reset_queries:
+        with connection.cursor() as cursor:
+            for sql in reset_queries:
+                cursor.execute(sql)
+
+
+def revertir_datos_listas_y_productos(apps, schema_editor):
+    db_alias = schema_editor.connection.alias
+    connection = schema_editor.connection
+
+    with connection.cursor() as cursor:
+        table_names = connection.introspection.table_names(cursor)
+
+    if 'productos_tipolistaprecio' not in table_names or 'productos_listaprecio' not in table_names:
+        return
+
+    ListaPrecio = apps.get_model('productos', 'ListaPrecio')
+    TipoListaPrecio = apps.get_model('productos', 'TipoListaPrecio')
+
+    for tipo in TipoListaPrecio.objects.using(db_alias).all():
+        if not ListaPrecio.objects.using(db_alias).filter(id=tipo.id).exists():
+            ListaPrecio.objects.using(db_alias).create(
+                id=tipo.id,
+                nombre=tipo.nombre,
+                descripcion=tipo.descripcion or '',
+                activa=tipo.activa,
+            )
+
+    reset_queries = connection.ops.sequence_reset_sql(no_style(), [ListaPrecio])
+    if reset_queries:
+        with connection.cursor() as cursor:
+            for sql in reset_queries:
+                cursor.execute(sql)
 
 
 class Migration(migrations.Migration):
@@ -39,7 +88,7 @@ class Migration(migrations.Migration):
                 'ordering': ['nombre'],
             },
         ),
-        migrations.RunPython(migrar_datos_listas_y_productos, migrations.RunPython.noop),
+        migrations.RunPython(migrar_datos_listas_y_productos, revertir_datos_listas_y_productos),
         migrations.RenameField(
             model_name='marca',
             old_name='activo',
