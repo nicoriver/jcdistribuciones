@@ -3,32 +3,125 @@
 import django.db.models.deletion
 from decimal import Decimal
 from django.conf import settings
+from django.core.management.color import no_style
 from django.db import migrations, models
 
 
 def copiar_datos_geografia(apps, schema_editor):
-    with schema_editor.connection.cursor() as cursor:
-        try:
-            cursor.execute("SELECT id, nombre FROM clientes_provincia")
-            for row in cursor.fetchall():
-                cursor.execute(
-                    "INSERT OR IGNORE INTO geografia_provincia (id, nombre) VALUES (%s, %s)",
-                    [row[0], row[1]]
+    db_alias = schema_editor.connection.alias
+    connection = schema_editor.connection
+
+    # Comprobar la existencia de tablas origen mediante introspección
+    with connection.cursor() as cursor:
+        table_names = [t.lower() for t in connection.introspection.table_names(cursor)]
+
+    old_provincia_table = 'clientes_provincia'
+    old_zona_table = 'clientes_zona'
+    old_localidad_table = 'clientes_localidad'
+
+    has_provincia = old_provincia_table in table_names
+    has_zona = old_zona_table in table_names
+    has_localidad = old_localidad_table in table_names
+
+    if not (has_provincia or has_zona or has_localidad):
+        return
+
+    OldProvincia = apps.get_model('clientes', 'Provincia')
+    OldZona = apps.get_model('clientes', 'Zona')
+    OldLocalidad = apps.get_model('clientes', 'Localidad')
+
+    NewProvincia = apps.get_model('geografia', 'Provincia')
+    NewZona = apps.get_model('geografia', 'Zona')
+    NewLocalidad = apps.get_model('geografia', 'Localidad')
+
+    # 1. Copiar Provincias
+    if has_provincia:
+        for old in OldProvincia.objects.using(db_alias).order_by('id'):
+            existente_id = NewProvincia.objects.using(db_alias).filter(id=old.id).first()
+            if existente_id:
+                if existente_id.nombre == old.nombre:
+                    continue
+                raise RuntimeError(
+                    f"Conflicto en migración de Provincia: ID {old.id} ya existe en 'geografia_provincia' "
+                    f"con nombre '{existente_id.nombre}', distinto del origen '{old.nombre}'."
                 )
-            cursor.execute("SELECT id, nombre, descripcion FROM clientes_zona")
-            for row in cursor.fetchall():
-                cursor.execute(
-                    "INSERT OR IGNORE INTO geografia_zona (id, nombre, descripcion, dia_reparto_defecto, activa) VALUES (%s, %s, %s, '', 1)",
-                    [row[0], row[1], row[2]]
+
+            existente_nombre = NewProvincia.objects.using(db_alias).filter(nombre=old.nombre).first()
+            if existente_nombre:
+                raise RuntimeError(
+                    f"Conflicto en migración de Provincia: El nombre '{old.nombre}' ya existe en 'geografia_provincia' "
+                    f"con ID {existente_nombre.id}, incompatible con el ID de origen {old.id}."
                 )
-            cursor.execute("SELECT id, provincia_id, nombre, codigo_postal FROM clientes_localidad")
-            for row in cursor.fetchall():
-                cursor.execute(
-                    "INSERT OR IGNORE INTO geografia_localidad (id, provincia_id, nombre, codigo_postal) VALUES (%s, %s, %s, %s)",
-                    [row[0], row[1], row[2], row[3]]
+
+            NewProvincia.objects.using(db_alias).create(
+                id=old.id,
+                nombre=old.nombre,
+            )
+
+    # 2. Copiar Zonas
+    if has_zona:
+        for old in OldZona.objects.using(db_alias).order_by('id'):
+            existente_id = NewZona.objects.using(db_alias).filter(id=old.id).first()
+            if existente_id:
+                if existente_id.nombre == old.nombre:
+                    continue
+                raise RuntimeError(
+                    f"Conflicto en migración de Zona: ID {old.id} ya existe en 'geografia_zona' "
+                    f"con nombre '{existente_id.nombre}', distinto del origen '{old.nombre}'."
                 )
-        except Exception:
-            pass
+
+            existente_nombre = NewZona.objects.using(db_alias).filter(nombre=old.nombre).first()
+            if existente_nombre:
+                raise RuntimeError(
+                    f"Conflicto en migración de Zona: El nombre '{old.nombre}' ya existe en 'geografia_zona' "
+                    f"con ID {existente_nombre.id}, incompatible con el ID de origen {old.id}."
+                )
+
+            NewZona.objects.using(db_alias).create(
+                id=old.id,
+                nombre=old.nombre,
+                descripcion=old.descripcion or '',
+                dia_reparto_defecto='',
+                activa=True,
+            )
+
+    # 3. Copiar Localidades (después de Provincias para respetar la FK a geografia_provincia)
+    if has_localidad:
+        for old in OldLocalidad.objects.using(db_alias).order_by('id'):
+            existente_id = NewLocalidad.objects.using(db_alias).filter(id=old.id).first()
+            if existente_id:
+                if existente_id.nombre == old.nombre and existente_id.provincia_id == old.provincia_id:
+                    continue
+                raise RuntimeError(
+                    f"Conflicto en migración de Localidad: ID {old.id} ya existe en 'geografia_localidad' "
+                    f"con datos diferentes."
+                )
+
+            existente_unicidad = NewLocalidad.objects.using(db_alias).filter(
+                provincia_id=old.provincia_id,
+                nombre=old.nombre,
+            ).first()
+            if existente_unicidad:
+                raise RuntimeError(
+                    f"Conflicto en migración de Localidad: La combinación provincia_id={old.provincia_id} "
+                    f"y nombre='{old.nombre}' ya existe en 'geografia_localidad' con ID {existente_unicidad.id}, "
+                    f"incompatible con el ID de origen {old.id}."
+                )
+
+            NewLocalidad.objects.using(db_alias).create(
+                id=old.id,
+                provincia_id=old.provincia_id,
+                nombre=old.nombre,
+                codigo_postal=old.codigo_postal or '',
+            )
+
+    # 4. Sincronizar secuencias para motores compatibles (ej. PostgreSQL)
+    reset_models = [NewProvincia, NewZona, NewLocalidad]
+    sequence_sql = connection.ops.sequence_reset_sql(no_style(), reset_models)
+    if sequence_sql:
+        with connection.cursor() as cursor:
+            for sql in sequence_sql:
+                cursor.execute(sql)
 
 
 class Migration(migrations.Migration):
