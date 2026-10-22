@@ -153,6 +153,7 @@
                                 <i class="bi bi-building-fill me-2"></i> Proveedores <small class="badge bg-secondary ms-1">Admin</small>
                             </a>
                         </li>
+                        {% if request.user.rol in 'ADMIN,SUPERVISOR' or request.user.is_superuser %}
                         <li class="nav-item">
                             <a class="nav-link {% if request.resolver_match.url_name in 'vendedores_list,vendedor_crear,vendedor_editar' %}active{% endif %}" href="{% url 'gestion:vendedores_list' %}">
                                 <i class="bi bi-person-badge-fill me-2"></i> Vendedores
@@ -163,6 +164,7 @@
                                 <i class="bi bi-geo-alt-fill me-2"></i> Zonas de Reparto
                             </a>
                         </li>
+                        {% endif %}
                         <li class="nav-item">
                             <a class="nav-link {% if request.resolver_match.url_name in 'productos_list,producto_crear,producto_editar' %}active{% endif %}" href="{% url 'gestion:productos_list' %}">
                                 <i class="bi bi-box-seam-fill me-2"></i> Catálogo y Productos

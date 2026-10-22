@@ -20,7 +20,7 @@ Durante la auditoría del panel de gestión y las pantallas preexistentes se det
    - Si la creación del usuario fallaba (p. ej., email duplicado), la creación del cliente se interrumpía por completo.
 
 2. **Inconsistencias en Alícuotas de IVA y Atributos de Producto:**
-   - `ProductoForm` intentaba importar e instanciar `AlicuotaIVA` como clave foránea o modelo dinámico, cuando en el modelo `Producto` (`apps/productos/models.py`), `alicuota_iva` está implementado como un `DecimalField` con opciones fijas (`Decimal('0.21')`, `Decimal('0.105')`, etc.).
+   - `ProductoForm` intentaba importar e instanciar `AlicuotaIVA` como clave foránea o modelo dinámico, cuando en el modelo `Producto` (`apps/productos/models.py`), `alicuota_iva` está implementado como un `DecimalField` con opciones porcentuales fijas (`Decimal('21.00')`, `Decimal('10.50')`, `Decimal('0.00')`, `Decimal('27.00')`).
    - Existían discrepancias en los nombres de atributos: campos nombrados `costo` y `codigo_barra` en formularios/plantillas frente a `costo_base` y `codigo_barras` en el modelo `Producto`.
    - La relación de precios en plantillas se consultaba como `producto.precios_lista.all` en lugar de la relación inversa real del modelo `producto.precios.all`.
    - El formulario de edición de productos permitía o mostraba campos directos de `stock_actual`. Modificar el stock directamente desde una pantalla comercial vulnera el principio de trazabilidad del Kardex (`MovimientoStock`).
@@ -117,28 +117,33 @@ Todas las rutas de gestión están protegidas mediante el decorador `@role_requi
 
 ---
 
-## 4. Resultados de Pruebas
+## 4. Resultados de Pruebas y Cierre de Hallazgos (DIST-004A)
 
 ### Pruebas Específicas de la Tarea (`apps/gestion/test_gestion_maestros.py`)
-Se implementaron 12 tests automatizados que evalúan los requerimientos de la tarea:
-1. `test_login_redirect_admin_and_supervisor_to_gestion`: Redirección por defecto al dashboard de gestión.
-2. `test_login_redirect_respects_safe_next`: Respeto de parámetro `?next=` seguro.
-3. `test_login_redirect_ignores_unsafe_next`: Protección contra redirecciones abiertas maliciosas.
-4. `test_unauthorized_role_forbidden_in_gestion`: Verificación de HTTP 403 ante usuarios sin rol de gestión.
-5. `test_sidebar_contains_master_links_not_django_admin`: Menú lateral apunta a URLs internas de gestión y no al Django Admin.
-6. `test_zona_crud_and_toggle_post_only`: Creación, edición, conmutación POST y rechazo de GET en toggle de zonas.
-7. `test_vendedor_crud_and_zone_sync_preserves_history`: Creación, edición y preservación del histórico en `AsignacionZonaVendedor`.
-8. `test_cliente_create_with_and_without_user`: Alta de cliente sin usuario y con usuario sin usar el CUIT como clave.
-9. `test_cliente_duplicate_cuit_validation`: Validación y rechazo de duplicación de CUIT en clientes.
-10. `test_producto_create_with_vat_and_kardex_stock_safety`: Alta de producto con alícuota válida y verificación de que la edición no corrompe el Kardex.
-11. `test_paginators_and_search_clientes_productos`: Paginación y preservación de parámetros de búsqueda en listados.
-12. `test_missing_master_data_warning_in_template`: Alertas preventivas ante dependencias maestras ausentes.
+Se implementaron 17 tests automatizados cubriendo los requerimientos iniciales y las regresiones del cierre de hallazgos DIST-004A:
+1. `test_login_redireccion_admin_y_supervisor_a_gestion`: Redirección por defecto al dashboard de gestión.
+2. `test_login_redireccion_aislamiento_vendedor_cliente_deposito`: Aislamiento de paneles según rol operativo (depósito, vendedor, cliente).
+3. `test_login_respeta_next_valido_y_autorizado`: Respeto de parámetro `?next=` seguro y rechazo de destinos no autorizados.
+4. `test_rechazo_accesos_no_autorizados`: Acceso anónimo redirige a login; roles `CLIENTE` y `VENDEDOR` son rechazados con `HTTP 403 Forbidden`.
+5. `test_prohibicion_modificar_datos_via_get`: Conmutación de activación/desactivación de zona y vendedor rechaza métodos GET devolviendo estrictamente `HTTP 405 Method Not Allowed`.
+6. `test_permisos_roles_afectados`: Permisos RBAC ajustados: rol `FACTURACION` accede a clientes y productos pero es rechazado con `HTTP 403` al intentar acceder a Zonas o Vendedores.
+7. `test_gestion_zonas_crud_y_toggle`: Listado, alta, edición, validación de nombres duplicados y switch de estado POST.
+8. `test_gestion_vendedores_y_asignacion_historica_zonas`: CRUD de vendedor con asignación/desasignación en `AsignacionZonaVendedor` marcando `activo=False` sin eliminación destructiva.
+9. `test_vinculacion_usuario_vendedor_incompatible_rechazada`: Validación estricta que rechaza vincular usuarios con roles incompatibles (`CLIENTE`, `ADMIN`, etc.) o usuarios ya asignados a otro vendedor.
+10. `test_alta_cliente_sin_usuario`: Creación de cliente sin usuario de portal cuando no se solicita.
+11. `test_alta_cliente_con_usuario_seguro`: Creación de cliente con cuenta de portal y contraseña personalizada válida (sin usar CUIT como clave).
+12. `test_alta_cliente_duplicado_cuit_rechazado`: Validación de unicidad de CUIT en clientes.
+13. `test_alta_cliente_colision_identificador_y_email_sin_registros_parciales`: Detección previa de colisiones de identificadores y correo en `Usuario`, impidiendo registros parciales y usuarios huérfanos mediante transacción atómica.
+14. `test_alta_cliente_con_contrasena_autogenerada_comunica_clave`: Generación de contraseña temporal cuando se deja en blanco y comunicación explícita en el mensaje de éxito para que el operador pueda transmitirla al cliente.
+15. `test_alta_producto_con_alicuota_valida_y_precios`: Alta de producto con alícuotas porcentuales vigentes (`21.00`, `10.50`, etc.) y cálculo de precios para listas activas.
+16. `test_preservacion_estricta_de_stock_y_kardex_en_edicion`: Edición comercial no modifica `stock_actual` ni corrompe el Kardex.
+17. `test_edicion_producto_preserva_stock_concurrente_e_ignora_post_stock`: Guardado comercial mediante `update_fields` exclusivo de campos comerciales. Si un movimiento de stock concurrente modifica `stock_actual` en la base de datos mientras el formulario está abierto, el nuevo stock se preserva intacto y cualquier valor enviado vía POST es descartado.
 
-**Resultado:** **12/12 pruebas PASADAS** exitosamente.
-
-### Suite Completa del Proyecto
-- **Total de pruebas:** 71 tests (59 preexistentes + 12 de esta tarea).
-- **Estado:** 100% aprobadas sin fallos ni regresiones.
+### Límites Reales de Verificación y Concurrencia
+> [!IMPORTANT]
+> **Aclaración sobre Concurrencia y Motores de Base de Datos:**
+> Las pruebas locales automatizadas fueron ejecutadas sobre bases de datos SQLite descartables en memoria/disco local. En dicho entorno monohilo/bloqueo de archivo se verificó que la sentencia `UPDATE` emitida por Django excluye `stock_actual` mediante `update_fields` comerciales y que las transacciones `transaction.atomic()` operan correctamente.
+> No obstante, la verdadera concurrencia multiusuario con aislamiento de transacciones MVCC y bloqueos por fila pertenece al motor PostgreSQL en el VPS Linux. Por lo tanto, no se declara concurrencia PostgreSQL comprobada desde SQLite local; la validación operativa final en concurrencia real se realizará tras el despliegue en el VPS.
 
 ---
 

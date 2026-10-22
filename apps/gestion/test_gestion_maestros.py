@@ -78,6 +78,16 @@ class GestionMaestrosBehaviorTests(TestCase):
             rol='DEPOSITO'
         )
 
+        self.facturacion_user = Usuario.objects.create_user(
+            username='facturacion_test',
+            cuit_dni='20666666666',
+            email='facturacion@test.com',
+            password='FacturacionPassword123!',
+            nombre='Facturacion',
+            apellido='Test',
+            rol='FACTURACION'
+        )
+
         # 2. Datos maestros base
         self.provincia = Provincia.objects.create(nombre='Santa Fe')
         self.localidad = Localidad.objects.create(
@@ -256,13 +266,41 @@ class GestionMaestrosBehaviorTests(TestCase):
             self.assertEqual(resp.status_code, 403, f"Falló vendedor en {url}")
 
     def test_prohibicion_modificar_datos_via_get(self):
-        """Las acciones de activación/desactivación rechazan métodos GET."""
+        """Las acciones de activación/desactivación rechazan métodos GET devolviendo HTTP 405."""
         self.client.force_login(self.admin_user)
         resp_zona = self.client.get(reverse('gestion:zona_toggle', args=[self.zona1.id]))
-        self.assertEqual(resp_zona.status_code, 400)
+        self.assertEqual(resp_zona.status_code, 405)
 
         resp_vend = self.client.get(reverse('gestion:vendedor_toggle', args=[self.vendedor.id]))
-        self.assertEqual(resp_vend.status_code, 400)
+        self.assertEqual(resp_vend.status_code, 405)
+
+    def test_permisos_roles_afectados(self):
+        """
+        ADMIN y SUPERVISOR tienen acceso a Zonas y Vendedores.
+        FACTURACION tiene acceso a Clientes y Productos, pero es rechazado (403) en Zonas y Vendedores.
+        """
+        # FACTURACION: permitido en clientes y productos
+        self.client.force_login(self.facturacion_user)
+        self.assertEqual(self.client.get(reverse('gestion:clientes_list')).status_code, 200)
+        self.assertEqual(self.client.get(reverse('gestion:productos_list')).status_code, 200)
+
+        # FACTURACION: prohibido (403) en zonas y vendedores
+        urls_admin_only = [
+            reverse('gestion:zonas_list'),
+            reverse('gestion:zona_crear'),
+            reverse('gestion:vendedores_list'),
+            reverse('gestion:vendedor_crear'),
+            reverse('gestion:zona_toggle', args=[self.zona1.id]),
+            reverse('gestion:vendedor_toggle', args=[self.vendedor.id]),
+        ]
+        for url in urls_admin_only:
+            resp = self.client.post(url, {})
+            self.assertEqual(resp.status_code, 403, f"FACTURACION no debe acceder a {url}")
+
+        # SUPERVISOR y ADMIN: permitidos
+        self.client.force_login(self.supervisor_user)
+        self.assertEqual(self.client.get(reverse('gestion:zonas_list')).status_code, 200)
+        self.assertEqual(self.client.get(reverse('gestion:vendedores_list')).status_code, 200)
 
     # --------------------------------------------------------------------------
     # 3. Gestión de Zonas
@@ -374,6 +412,75 @@ class GestionMaestrosBehaviorTests(TestCase):
         asig_zona1 = AsignacionZonaVendedor.objects.filter(vendedor=vendedor_nuevo, zona=self.zona1).first()
         self.assertTrue(asig_zona1.activo)
 
+    def test_vinculacion_usuario_vendedor_incompatible_rechazada(self):
+        """
+        Solo se pueden vincular cuentas de usuario con rol VENDEDOR que no pertenezcan a otro vendedor.
+        Usuarios con rol CLIENTE, ADMIN o SUPERVISOR son rechazados.
+        """
+        self.client.force_login(self.admin_user)
+
+        # 1. Intentar vincular cuenta de CLIENTE
+        resp_cliente_link = self.client.post(reverse('gestion:vendedor_crear'), {
+            'legajo': 'VEND-ERR-1',
+            'nombre': 'Test',
+            'apellido': 'Incompatible',
+            'comision_porcentaje': '3.00',
+            'activo': True,
+            'usuario': self.cliente_user.id
+        })
+        self.assertEqual(resp_cliente_link.status_code, 200)
+        self.assertContains(resp_cliente_link, "Solo se pueden vincular cuentas de usuario")
+        self.assertFalse(Vendedor.objects.filter(legajo='VEND-ERR-1').exists())
+
+        # 2. Intentar vincular cuenta de ADMIN
+        resp_admin_link = self.client.post(reverse('gestion:vendedor_crear'), {
+            'legajo': 'VEND-ERR-2',
+            'nombre': 'Test',
+            'apellido': 'Incompatible',
+            'comision_porcentaje': '3.00',
+            'activo': True,
+            'usuario': self.admin_user.id
+        })
+        self.assertEqual(resp_admin_link.status_code, 200)
+        self.assertContains(resp_admin_link, "Solo se pueden vincular cuentas de usuario")
+        self.assertFalse(Vendedor.objects.filter(legajo='VEND-ERR-2').exists())
+
+        # 3. Intentar vincular un usuario VENDEDOR que ya está asignado a otro vendedor
+        self.vendedor.usuario = self.vendedor_user
+        self.vendedor.save()
+
+        resp_dup_vend = self.client.post(reverse('gestion:vendedor_crear'), {
+            'legajo': 'VEND-ERR-3',
+            'nombre': 'Test',
+            'apellido': 'Duplicado',
+            'comision_porcentaje': '3.00',
+            'activo': True,
+            'usuario': self.vendedor_user.id
+        })
+        self.assertEqual(resp_dup_vend.status_code, 200)
+        self.assertContains(resp_dup_vend, "Solo se pueden vincular cuentas de usuario")
+        self.assertFalse(Vendedor.objects.filter(legajo='VEND-ERR-3').exists())
+
+        # 4. Vincular un usuario con rol VENDEDOR libre: permitido
+        vend_libre = Usuario.objects.create_user(
+            username='vendedor_libre',
+            cuit_dni='20777777777',
+            email='libre@vendedor.com',
+            password='Password123!',
+            rol='VENDEDOR'
+        )
+        resp_ok = self.client.post(reverse('gestion:vendedor_crear'), {
+            'legajo': 'VEND-OK',
+            'nombre': 'Vendedor',
+            'apellido': 'Valido',
+            'comision_porcentaje': '3.00',
+            'activo': True,
+            'usuario': vend_libre.id
+        })
+        self.assertRedirects(resp_ok, reverse('gestion:vendedores_list'))
+        v = Vendedor.objects.get(legajo='VEND-OK')
+        self.assertEqual(v.usuario, vend_libre)
+
     # --------------------------------------------------------------------------
     # 5. Gestión de Clientes (Con y Sin Usuario)
     # --------------------------------------------------------------------------
@@ -466,6 +573,93 @@ class GestionMaestrosBehaviorTests(TestCase):
         resp = self.client.post(reverse('gestion:cliente_crear'), data)
         self.assertEqual(resp.status_code, 200)
         self.assertContains(resp, 'Ya existe un cliente registrado con este CUIT')
+
+    def test_alta_cliente_colision_identificador_y_email_sin_registros_parciales(self):
+        """
+        Si al solicitar usuario de portal colisiona CUIT/username o email:
+        - Muestra error visible en el formulario.
+        - NO presenta como exitosa la habilitación del portal.
+        - No crea registros parciales ni usuarios huérfanos.
+        """
+        self.client.force_login(self.supervisor_user)
+
+        # 1. Creamos un usuario standalone existente (ej. un operador interno) sin Cliente
+        Usuario.objects.create_user(
+            username='20999888776',
+            cuit_dni='20999888776',
+            email='operador_existente@test.com',
+            password='Password123!',
+            rol='ADMIN'
+        )
+
+        # Intento de alta con CUIT que colisiona con el username/cuit_dni del usuario existente
+        data_cuit_colision = {
+            'razon_social': 'Cliente Colision CUIT SRL',
+            'cuit': '20-99988877-6',
+            'condicion_iva': self.condicion_iva.id,
+            'domicilio': 'Calle 100',
+            'localidad': self.localidad.id,
+            'zona': self.zona1.id,
+            'vendedor': self.vendedor.id,
+            'dia_reparto': 1,
+            'tipo_lista_precio': self.tipo_lista.id,
+            'monto_minimo_pedido': '0.00',
+            'crear_usuario_portal': True,
+            'password_portal': 'PassValido123!',
+            'estado': 'ACTIVO',
+        }
+        resp = self.client.post(reverse('gestion:cliente_crear'), data_cuit_colision)
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "Ya existe un usuario en el sistema con el identificador")
+        self.assertFalse(Cliente.objects.filter(cuit='20999888776').exists())
+
+        # 2. Colisión de Email
+        data_email_colision = {
+            'razon_social': 'Cliente Colision Email SRL',
+            'cuit': '30-88888888-8',
+            'email': 'operador_existente@test.com',  # Email del usuario existente
+            'condicion_iva': self.condicion_iva.id,
+            'domicilio': 'Calle 200',
+            'localidad': self.localidad.id,
+            'zona': self.zona1.id,
+            'vendedor': self.vendedor.id,
+            'dia_reparto': 1,
+            'tipo_lista_precio': self.tipo_lista.id,
+            'monto_minimo_pedido': '0.00',
+            'crear_usuario_portal': True,
+            'password_portal': 'PassValido123!',
+            'estado': 'ACTIVO',
+        }
+        resp_email = self.client.post(reverse('gestion:cliente_crear'), data_email_colision)
+        self.assertEqual(resp_email.status_code, 200)
+        self.assertContains(resp_email, "ya se encuentra registrado por otro usuario")
+        self.assertFalse(Cliente.objects.filter(cuit='30888888888').exists())
+        self.assertFalse(Usuario.objects.filter(username='30888888888').exists())
+
+    def test_alta_cliente_con_contrasena_autogenerada_comunica_clave(self):
+        """Si no se ingresa contraseña, el sistema genera una temporal y la comunica claramente."""
+        self.client.force_login(self.admin_user)
+        data = {
+            'razon_social': 'Farmacia Central SRL',
+            'cuit': '30-33221100-9',
+            'condicion_iva': self.condicion_iva.id,
+            'domicilio': 'San Martin 500',
+            'localidad': self.localidad.id,
+            'zona': self.zona1.id,
+            'vendedor': self.vendedor.id,
+            'dia_reparto': 1,
+            'tipo_lista_precio': self.tipo_lista.id,
+            'monto_minimo_pedido': '0.00',
+            'crear_usuario_portal': True,
+            'password_portal': '',  # En blanco para autogenerar
+            'estado': 'ACTIVO',
+        }
+        resp = self.client.post(reverse('gestion:cliente_crear'), data, follow=True)
+        self.assertEqual(resp.status_code, 200)
+        cliente = Cliente.objects.get(cuit='30332211009')
+        self.assertIsNotNone(cliente.usuario)
+        # El mensaje de feedback debe incluir la contraseña generada
+        self.assertContains(resp, "Contraseña inicial generada:")
 
     # --------------------------------------------------------------------------
     # 6. Gestión de Productos y Preservación de Stock / Kardex
@@ -562,3 +756,49 @@ class GestionMaestrosBehaviorTests(TestCase):
         # El libro de Kardex no fue contaminado
         movimientos_despues = MovimientoStock.objects.filter(producto=prod).count()
         self.assertEqual(movimientos_despues, 1)
+
+    def test_edicion_producto_preserva_stock_concurrente_e_ignora_post_stock(self):
+        """
+        Si un movimiento del Kardex cambia el stock en la base de datos mientras el formulario
+        está abierto, la edición comercial NUNCA sobrescribe el stock con el valor anterior
+        ni con un stock enviado maliciosamente por POST.
+        """
+        self.client.force_login(self.admin_user)
+
+        prod = Producto.objects.create(
+            codigo='PROD-CONCURRENTE',
+            nombre='Aceite de Girasol 900ml',
+            categoria=self.categoria,
+            marca=self.marca,
+            costo_base=Decimal('1200.00'),
+            alicuota_iva=Decimal('21.00'),
+            stock_actual=10,  # Stock inicial en DB
+            controla_stock=True,
+            activo=True
+        )
+
+        # Simulamos que ingresa un remito o movimiento en Kardex antes de guardar el form
+        Producto.objects.filter(pk=prod.pk).update(stock_actual=45)
+
+        # Se envía POST con cambios comerciales y con un intento de fijar stock en 999
+        data_edit = {
+            'codigo': 'PROD-CONCURRENTE',
+            'nombre': 'Aceite de Girasol 900ml Especial',
+            'categoria': self.categoria.id,
+            'marca': self.marca.id,
+            'alicuota_iva': '21.00',
+            'costo_base': '1350.00',
+            'stock_actual': '999',  # Debe ser totalmente ignorado
+            'punto_reposicion': '15',
+            'controla_stock': True,
+            'activo': True,
+        }
+
+        resp = self.client.post(reverse('gestion:producto_editar', args=[prod.id]), data_edit)
+        self.assertRedirects(resp, reverse('gestion:productos_list'))
+
+        prod.refresh_from_db()
+        self.assertEqual(prod.nombre, 'Aceite de Girasol 900ml Especial')
+        self.assertEqual(prod.costo_base, Decimal('1350.00'))
+        # El stock DEBE permanecer en 45 (el stock concurrente nuevo), NO en 10 ni en 999
+        self.assertEqual(prod.stock_actual, 45)

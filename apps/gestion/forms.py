@@ -1,5 +1,6 @@
 from decimal import Decimal
 from django import forms
+from django.db import transaction
 from django.db.models import Q
 from django.utils.crypto import get_random_string
 
@@ -28,7 +29,7 @@ class ClienteForm(forms.ModelForm):
     password_portal = forms.CharField(
         required=False,
         label="Contraseña del Portal",
-        help_text="Opcional. Si se deja en blanco se generará una contraseña segura aleatoria.",
+        help_text="Opcional. Si se deja en blanco se generará una contraseña temporal que se mostrará al guardar.",
         widget=forms.PasswordInput(attrs={
             'class': 'form-control',
             'placeholder': 'Dejar en blanco para autogenerar'
@@ -65,11 +66,24 @@ class ClienteForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields['tipo_lista_precio'].label = "Lista de Precios"
+        self.fields['monto_minimo_pedido'].required = False
+        self.password_generada = None
+        self.usuario_creado = False
+
         if self.instance and self.instance.pk and self.instance.usuario:
             self.fields['crear_usuario_portal'].initial = True
             self.fields['crear_usuario_portal'].help_text = (
                 f"Usuario actual vinculado: {self.instance.usuario.username} ({self.instance.usuario.email or 'sin email'})"
             )
+            self.fields['password_portal'].help_text = (
+                "Opcional. Ingrese una nueva contraseña solo si desea cambiar la actual del usuario del portal."
+            )
+
+    def clean_monto_minimo_pedido(self):
+        monto = self.cleaned_data.get('monto_minimo_pedido')
+        if monto is None:
+            return Decimal('0.00')
+        return monto
 
     def clean_cuit(self):
         cuit = self.cleaned_data.get('cuit', '').strip().replace('-', '').replace('.', '')
@@ -92,17 +106,43 @@ class ClienteForm(forms.ModelForm):
         cleaned_data = super().clean()
         crear_usuario = cleaned_data.get('crear_usuario_portal')
         cuit = cleaned_data.get('cuit')
+        email = (cleaned_data.get('email') or '').strip()
+        pwd = (cleaned_data.get('password_portal') or '').strip()
 
-        if crear_usuario and cuit and (not self.instance or not self.instance.usuario):
-            # Verificar si ya existe usuario con ese CUIT asignado a otro cliente
-            user_existente = Usuario.objects.filter(
-                Q(username=cuit) | Q(cuit_dni=cuit)
-            ).first()
-            if user_existente and hasattr(user_existente, 'perfil_cliente') and user_existente.perfil_cliente != self.instance:
-                self.add_error(
-                    'crear_usuario_portal',
-                    f"El usuario con CUIT/identificador '{cuit}' ya está asignado a otro cliente."
-                )
+        # Si el cliente ya tiene usuario vinculado
+        if self.instance and self.instance.pk and self.instance.usuario:
+            if pwd and len(pwd) < 6:
+                self.add_error('password_portal', "La nueva contraseña debe tener al menos 6 caracteres.")
+            return cleaned_data
+
+        if crear_usuario:
+            if not cuit:
+                self.add_error('crear_usuario_portal', "Se requiere un CUIT válido para habilitar el usuario del portal.")
+            else:
+                # 1. Validar colisión de username en Usuario (no vincular existentes automáticamente)
+                if Usuario.objects.filter(username=cuit).exists():
+                    self.add_error(
+                        'crear_usuario_portal',
+                        f"Ya existe un usuario en el sistema con el identificador / username '{cuit}'."
+                    )
+                # 2. Validar colisión de CUIT / DNI en Usuario
+                elif Usuario.objects.filter(cuit_dni=cuit).exists():
+                    self.add_error(
+                        'crear_usuario_portal',
+                        f"Ya existe un usuario en el sistema con el CUIT/DNI '{cuit}'."
+                    )
+
+            # 3. Validar colisión de email si se especificó
+            if email:
+                if Usuario.objects.filter(email__iexact=email).exists():
+                    self.add_error(
+                        'email',
+                        f"El correo electrónico '{email}' ya se encuentra registrado por otro usuario."
+                    )
+
+            # 4. Validar contraseña si se ingresó
+            if pwd and len(pwd) < 6:
+                self.add_error('password_portal', "La contraseña personalizada debe tener al menos 6 caracteres.")
 
         return cleaned_data
 
@@ -112,29 +152,40 @@ class ClienteForm(forms.ModelForm):
         cliente.cuit = cuit_clean
 
         crear_usuario = self.cleaned_data.get('crear_usuario_portal', False)
-        # Solo crear usuario si se solicita explícitamente y el cliente no posee usuario aún
-        if crear_usuario and not cliente.usuario:
-            pwd = self.cleaned_data.get('password_portal', '').strip()
-            if not pwd:
-                pwd = get_random_string(12)
-            email_val = self.cleaned_data.get('email', '').strip() or None
+        pwd = (self.cleaned_data.get('password_portal') or '').strip()
+        email_val = (self.cleaned_data.get('email') or '').strip() or None
 
-            try:
-                user = Usuario.objects.create_user(
-                    username=cuit_clean,
-                    cuit_dni=cuit_clean,
-                    email=email_val,
-                    password=pwd,
-                    nombre=self.cleaned_data.get('razon_social', ''),
-                    rol='CLIENTE'
-                )
-                cliente.usuario = user
-            except Exception:
-                # La creación del cliente nunca debe abortar por fallas accesorias al crear usuario
-                pass
+        self.password_generada = None
+        self.usuario_creado = False
 
         if commit:
-            cliente.save()
+            with transaction.atomic():
+                # Caso A: Crear nuevo usuario para cliente sin usuario
+                if crear_usuario and not cliente.usuario:
+                    if not pwd:
+                        pwd = get_random_string(10)
+                        self.password_generada = pwd
+                    else:
+                        self.password_generada = None
+
+                    user = Usuario.objects.create_user(
+                        username=cuit_clean,
+                        cuit_dni=cuit_clean,
+                        email=email_val,
+                        password=pwd,
+                        nombre=self.cleaned_data.get('razon_social', ''),
+                        rol='CLIENTE'
+                    )
+                    cliente.usuario = user
+                    self.usuario_creado = True
+
+                # Caso B: Modificar contraseña de usuario existente si fue provista
+                elif cliente.usuario and pwd:
+                    cliente.usuario.set_password(pwd)
+                    cliente.usuario.save(update_fields=['password'])
+
+                cliente.save()
+
         return cliente
 
 
@@ -207,16 +258,24 @@ class ProductoForm(forms.ModelForm):
 
     def save(self, commit=True):
         producto = super().save(commit=False)
-        # Garantizar que una edición comercial no salte el Kardex ni modifique stock_actual
-        if self.instance and self.instance.pk:
-            db_obj = Producto.objects.filter(pk=self.instance.pk).values('stock_actual').first()
-            if db_obj:
-                producto.stock_actual = db_obj['stock_actual']
-        elif producto.stock_actual is None:
-            producto.stock_actual = 0
 
-        if commit:
-            producto.save()
+        if self.instance and self.instance.pk:
+            # Edición comercial: actualizar ÚNICAMENTE campos comerciales permitidos
+            # NUNCA leer ni sobreescribir stock_actual para proteger movimientos concurrentes del Kardex
+            campos_comerciales = [
+                'codigo', 'codigo_barras', 'nombre', 'descripcion',
+                'categoria', 'marca', 'alicuota_iva', 'costo_base',
+                'punto_reposicion', 'controla_stock', 'activo'
+            ]
+            if commit:
+                producto.save(update_fields=campos_comerciales)
+        else:
+            # Alta de nuevo producto: asegurar stock inicial en cero
+            if producto.stock_actual is None:
+                producto.stock_actual = 0
+            if commit:
+                producto.save()
+
         return producto
 
 
@@ -273,20 +332,70 @@ class VendedorForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # Limitar la selección de usuarios a roles de vendedor o staff
-        user_qs = Usuario.objects.filter(
-            Q(rol='VENDEDOR') | Q(is_staff=True) | Q(perfil_vendedor__isnull=True)
-        ).distinct()
+        # Limitar estrictamente a usuarios con rol 'VENDEDOR' que no estén asignados a otro vendedor
+        user_qs = Usuario.objects.filter(rol='VENDEDOR').filter(
+            Q(perfil_vendedor__isnull=True)
+        )
         if self.instance and self.instance.pk and self.instance.usuario:
-            user_qs = (user_qs | Usuario.objects.filter(pk=self.instance.usuario_id)).distinct()
-        self.fields['usuario'].queryset = user_qs
+            user_qs = (user_qs | Usuario.objects.filter(pk=self.instance.usuario_id))
+        self.fields['usuario'].queryset = user_qs.order_by('username')
         self.fields['usuario'].required = False
+        self.fields['usuario'].help_text = "Solo se permiten cuentas de usuario con rol 'Vendedor'."
+        self.fields['usuario'].error_messages['invalid_choice'] = (
+            "Solo se pueden vincular cuentas de usuario con rol 'Vendedor'."
+        )
 
         # Preseleccionar zonas actualmente activas
         if self.instance and self.instance.pk:
             self.fields['zonas'].initial = self.instance.zonas.filter(
                 asignaciones_vendedor__activo=True
             )
+
+    def clean_usuario(self):
+        usuario = self.cleaned_data.get('usuario')
+        if usuario:
+            if usuario.rol != 'VENDEDOR':
+                raise forms.ValidationError(
+                    f"El usuario '{usuario.username}' tiene rol '{usuario.get_rol_display()}'. "
+                    "Solo se pueden vincular cuentas de usuario con rol 'Vendedor'."
+                )
+            if hasattr(usuario, 'perfil_vendedor') and usuario.perfil_vendedor != self.instance:
+                raise forms.ValidationError(
+                    f"El usuario '{usuario.username}' ya está asignado al vendedor '{usuario.perfil_vendedor.nombre_completo()}'."
+                )
+        return usuario
+
+    def clean_legajo(self):
+        legajo = self.cleaned_data.get('legajo')
+        if legajo:
+            legajo = legajo.strip()
+            qs = Vendedor.objects.filter(legajo__iexact=legajo)
+            if self.instance and self.instance.pk:
+                qs = qs.exclude(pk=self.instance.pk)
+            if qs.exists():
+                raise forms.ValidationError(f"Ya existe un vendedor con el legajo '{legajo}'.")
+        return legajo or None
+
+    def save(self, commit=True):
+        vendedor = super().save(commit=commit)
+
+        # Sincronizar asignaciones de zona mediante el modelo histórico vigente
+        zonas_seleccionadas = list(self.cleaned_data.get('zonas', []))
+
+        # 1. Asignar o reactivar seleccionadas
+        for z in zonas_seleccionadas:
+            AsignacionZonaVendedor.objects.update_or_create(
+                vendedor=vendedor,
+                zona=z,
+                defaults={'activo': True}
+            )
+
+        # 2. Desactivar las desmarcadas sin borrarlas para preservar histórico
+        AsignacionZonaVendedor.objects.filter(
+            vendedor=vendedor
+        ).exclude(zona__in=zonas_seleccionadas).update(activo=False)
+
+        return vendedor
 
     def clean_legajo(self):
         legajo = self.cleaned_data.get('legajo')

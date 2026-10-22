@@ -6,7 +6,7 @@ from django.contrib.auth.decorators import login_required
 from django.utils.decorators import method_decorator
 from django.views import View
 from django.contrib import messages
-from django.http import HttpResponseForbidden, HttpResponseBadRequest
+from django.http import HttpResponseForbidden, HttpResponseBadRequest, HttpResponseNotAllowed
 from django.db import models
 from django.db.models import Q, F, Sum
 from django.utils import timezone
@@ -360,7 +360,20 @@ def cliente_crear_view(request):
         form = ClienteForm(request.POST)
         if form.is_valid():
             cliente = form.save()
-            messages.success(request, f"Cliente '{cliente.razon_social}' registrado exitosamente.")
+            if getattr(form, 'usuario_creado', False):
+                if getattr(form, 'password_generada', None):
+                    messages.success(
+                        request,
+                        f"Cliente '{cliente.razon_social}' registrado con usuario del portal '{cliente.usuario.username}'. "
+                        f"Contraseña inicial generada: {form.password_generada} (comuníquela al cliente)."
+                    )
+                else:
+                    messages.success(
+                        request,
+                        f"Cliente '{cliente.razon_social}' registrado con usuario del portal '{cliente.usuario.username}'."
+                    )
+            else:
+                messages.success(request, f"Cliente '{cliente.razon_social}' registrado exitosamente.")
             return redirect('gestion:clientes_list')
     else:
         form = ClienteForm()
@@ -381,7 +394,22 @@ def cliente_editar_view(request, cliente_id):
         form = ClienteForm(request.POST, instance=cliente)
         if form.is_valid():
             cliente = form.save()
-            messages.success(request, f"Cliente '{cliente.razon_social}' actualizado correctamente.")
+            if getattr(form, 'usuario_creado', False):
+                if getattr(form, 'password_generada', None):
+                    messages.success(
+                        request,
+                        f"Cliente '{cliente.razon_social}' actualizado. Se habilitó acceso al portal: "
+                        f"Usuario '{cliente.usuario.username}' | Contraseña temporal: {form.password_generada} (comuníquela al cliente)."
+                    )
+                else:
+                    messages.success(
+                        request,
+                        f"Cliente '{cliente.razon_social}' actualizado con acceso al portal (Usuario '{cliente.usuario.username}')."
+                    )
+            elif cliente.usuario and form.cleaned_data.get('password_portal', '').strip():
+                messages.success(request, f"Cliente '{cliente.razon_social}' y contraseña del portal actualizados correctamente.")
+            else:
+                messages.success(request, f"Cliente '{cliente.razon_social}' actualizado correctamente.")
             return redirect('gestion:clientes_list')
     else:
         form = ClienteForm(instance=cliente)
@@ -549,7 +577,7 @@ def producto_editar_view(request, producto_id):
 # MÓDULO DE ZONAS LOGÍSTICAS
 # ==============================================================================
 
-@role_required(['SUPERVISOR', 'ADMIN', 'FACTURACION'])
+@role_required(['SUPERVISOR', 'ADMIN'])
 def zonas_list_view(request):
     zonas_qs = Zona.objects.annotate(
         total_clientes=models.Count('clientes', distinct=True),
@@ -585,7 +613,7 @@ def zonas_list_view(request):
     return render(request, 'gestion/zonas_list.html', context)
 
 
-@role_required(['SUPERVISOR', 'ADMIN', 'FACTURACION'])
+@role_required(['SUPERVISOR', 'ADMIN'])
 def zona_crear_view(request):
     if request.method == 'POST':
         form = ZonaForm(request.POST)
@@ -603,7 +631,7 @@ def zona_crear_view(request):
     return render(request, 'gestion/zona_form.html', context)
 
 
-@role_required(['SUPERVISOR', 'ADMIN', 'FACTURACION'])
+@role_required(['SUPERVISOR', 'ADMIN'])
 def zona_editar_view(request, zona_id):
     zona = get_object_or_404(Zona, id=zona_id)
 
@@ -624,10 +652,10 @@ def zona_editar_view(request, zona_id):
     return render(request, 'gestion/zona_form.html', context)
 
 
-@role_required(['SUPERVISOR', 'ADMIN', 'FACTURACION'])
+@role_required(['SUPERVISOR', 'ADMIN'])
 def zona_toggle_view(request, zona_id):
     if request.method != 'POST':
-        return HttpResponseBadRequest('Acción no permitida vía GET.')
+        return HttpResponseNotAllowed(['POST'], 'Acción no permitida vía GET.')
 
     zona = get_object_or_404(Zona, id=zona_id)
     zona.activa = not zona.activa
@@ -641,7 +669,7 @@ def zona_toggle_view(request, zona_id):
 # MÓDULO DE VENDEDORES Y ASIGNACIÓN DE ZONAS
 # ==============================================================================
 
-@role_required(['SUPERVISOR', 'ADMIN', 'FACTURACION'])
+@role_required(['SUPERVISOR', 'ADMIN'])
 def vendedores_list_view(request):
     vendedores_qs = Vendedor.objects.select_related('usuario').prefetch_related(
         'asignaciones_zona',
@@ -689,7 +717,7 @@ def vendedores_list_view(request):
     return render(request, 'gestion/vendedores_list.html', context)
 
 
-@role_required(['SUPERVISOR', 'ADMIN', 'FACTURACION'])
+@role_required(['SUPERVISOR', 'ADMIN'])
 def vendedor_crear_view(request):
     if request.method == 'POST':
         form = VendedorForm(request.POST)
@@ -707,7 +735,7 @@ def vendedor_crear_view(request):
     return render(request, 'gestion/vendedor_form.html', context)
 
 
-@role_required(['SUPERVISOR', 'ADMIN', 'FACTURACION'])
+@role_required(['SUPERVISOR', 'ADMIN'])
 def vendedor_editar_view(request, vendedor_id):
     vendedor = get_object_or_404(Vendedor, id=vendedor_id)
 
@@ -728,10 +756,10 @@ def vendedor_editar_view(request, vendedor_id):
     return render(request, 'gestion/vendedor_form.html', context)
 
 
-@role_required(['SUPERVISOR', 'ADMIN', 'FACTURACION'])
+@role_required(['SUPERVISOR', 'ADMIN'])
 def vendedor_toggle_view(request, vendedor_id):
     if request.method != 'POST':
-        return HttpResponseBadRequest('Acción no permitida vía GET.')
+        return HttpResponseNotAllowed(['POST'], 'Acción no permitida vía GET.')
 
     vendedor = get_object_or_404(Vendedor, id=vendedor_id)
     vendedor.activo = not vendedor.activo
