@@ -18,11 +18,12 @@ from productos.models import Producto, Presentacion, Categoria, Marca, TipoLista
 from pedidos.models import Pedido
 from pedidos.services import PedidoService
 from compras.models import Compra
+from proveedores.models import Proveedor
 from comprobantes.models import Remito
 from comprobantes.services import RemitoService
 from .forms import (
     ClienteForm, ProductoForm, PrecioProductoForm, ListaPrecioForm,
-    ZonaForm, VendedorForm
+    ZonaForm, VendedorForm, ProveedorForm
 )
 
 
@@ -767,6 +768,100 @@ def vendedor_toggle_view(request, vendedor_id):
     estado_str = "activado" if vendedor.activo else "desactivado"
     messages.info(request, f"Vendedor '{vendedor.nombre_completo()}' {estado_str} exitosamente.")
     return redirect('gestion:vendedores_list')
+
+
+# ==============================================================================
+# MÓDULO DE PROVEEDORES
+# ==============================================================================
+
+@role_required(['SUPERVISOR', 'ADMIN'])
+def proveedores_list_view(request):
+    proveedores_qs = Proveedor.objects.annotate(
+        total_compras=models.Count('compras', distinct=True),
+        total_productos=models.Count('productos', distinct=True)
+    ).order_by('razon_social')
+
+    q = request.GET.get('q', '').strip()
+    estado = request.GET.get('estado', '').strip()
+
+    if q:
+        proveedores_qs = proveedores_qs.filter(
+            Q(razon_social__icontains=q) |
+            Q(cuit__icontains=q) |
+            Q(contacto_nombre__icontains=q) |
+            Q(telefono__icontains=q) |
+            Q(email__icontains=q)
+        )
+
+    if estado == 'activo':
+        proveedores_qs = proveedores_qs.filter(activo=True)
+    elif estado == 'inactivo':
+        proveedores_qs = proveedores_qs.filter(activo=False)
+
+    paginator = Paginator(proveedores_qs, 25)
+    page_number = request.GET.get('page')
+    page_obj = paginator.get_page(page_number)
+
+    context = {
+        'page_obj': page_obj,
+        'proveedores': page_obj,
+        'query': q,
+        'estado_actual': estado,
+        'query_string': _get_query_string(request),
+    }
+    return render(request, 'gestion/proveedores_list.html', context)
+
+
+@role_required(['SUPERVISOR', 'ADMIN'])
+def proveedor_crear_view(request):
+    if request.method == 'POST':
+        form = ProveedorForm(request.POST)
+        if form.is_valid():
+            proveedor = form.save()
+            messages.success(request, f"Proveedor '{proveedor.razon_social}' creado exitosamente.")
+            return redirect('gestion:proveedores_list')
+    else:
+        form = ProveedorForm()
+
+    context = {
+        'form': form,
+        'titulo': 'Registrar Nuevo Proveedor'
+    }
+    return render(request, 'gestion/proveedor_form.html', context)
+
+
+@role_required(['SUPERVISOR', 'ADMIN'])
+def proveedor_editar_view(request, proveedor_id):
+    proveedor = get_object_or_404(Proveedor, id=proveedor_id)
+
+    if request.method == 'POST':
+        form = ProveedorForm(request.POST, instance=proveedor)
+        if form.is_valid():
+            proveedor = form.save()
+            messages.success(request, f"Proveedor '{proveedor.razon_social}' actualizado correctamente.")
+            return redirect('gestion:proveedores_list')
+    else:
+        form = ProveedorForm(instance=proveedor)
+
+    context = {
+        'form': form,
+        'proveedor': proveedor,
+        'titulo': f'Editar Proveedor: {proveedor.razon_social}'
+    }
+    return render(request, 'gestion/proveedor_form.html', context)
+
+
+@role_required(['SUPERVISOR', 'ADMIN'])
+def proveedor_toggle_view(request, proveedor_id):
+    if request.method != 'POST':
+        return HttpResponseNotAllowed(['POST'], 'Acción no permitida vía GET.')
+
+    proveedor = get_object_or_404(Proveedor, id=proveedor_id)
+    proveedor.activo = not proveedor.activo
+    proveedor.save(update_fields=['activo'])
+    estado_str = "activado" if proveedor.activo else "desactivado"
+    messages.info(request, f"Proveedor '{proveedor.razon_social}' {estado_str} exitosamente.")
+    return redirect('gestion:proveedores_list')
 
 
 # ==============================================================================

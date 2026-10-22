@@ -15,6 +15,7 @@ from productos.models import (
     AlicuotaIVA,
     IVA_CHOICES
 )
+from proveedores.models import Proveedor
 from usuarios.models import Usuario
 
 
@@ -397,37 +398,68 @@ class VendedorForm(forms.ModelForm):
 
         return vendedor
 
-    def clean_legajo(self):
-        legajo = self.cleaned_data.get('legajo')
-        if legajo:
-            legajo = legajo.strip()
-            qs = Vendedor.objects.filter(legajo__iexact=legajo)
-            if self.instance and self.instance.pk:
-                qs = qs.exclude(pk=self.instance.pk)
-            if qs.exists():
-                raise forms.ValidationError(f"Ya existe un vendedor con el legajo '{legajo}'.")
-        return legajo or None
 
-    def save(self, commit=True):
-        vendedor = super().save(commit=commit)
+class ProveedorForm(forms.ModelForm):
+    class Meta:
+        model = Proveedor
+        fields = [
+            'cuit',
+            'razon_social',
+            'domicilio',
+            'telefono',
+            'email',
+            'contacto_nombre',
+            'activo',
+        ]
+        widgets = {
+            'cuit': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': '30123456789 (10 u 11 dígitos, sin guiones)'
+            }),
+            'razon_social': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'Ej. Molinos Río de la Plata S.A.'
+            }),
+            'domicilio': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'Ej. Av. Libertador 1234, CABA'
+            }),
+            'telefono': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'Ej. 011-4567-8900'
+            }),
+            'email': forms.EmailInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'proveedor@empresa.com'
+            }),
+            'contacto_nombre': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'Ej. Juan Pérez (Ventas)'
+            }),
+            'activo': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+        }
 
-        # Sincronizar asignaciones de zona mediante el modelo histórico vigente
-        zonas_seleccionadas = list(self.cleaned_data.get('zonas', []))
+    def clean_cuit(self):
+        cuit = self.cleaned_data.get('cuit', '').strip().replace('-', '').replace('.', '')
+        if not cuit:
+            raise forms.ValidationError("El CUIT es obligatorio.")
+        if not cuit.isdigit():
+            raise forms.ValidationError("El CUIT debe contener únicamente números.")
+        if len(cuit) < 10 or len(cuit) > 11:
+            raise forms.ValidationError("El CUIT debe tener entre 10 y 11 dígitos numéricos.")
 
-        # 1. Asignar o reactivar seleccionadas
-        for z in zonas_seleccionadas:
-            AsignacionZonaVendedor.objects.update_or_create(
-                vendedor=vendedor,
-                zona=z,
-                defaults={'activo': True}
-            )
+        qs = Proveedor.objects.filter(cuit=cuit)
+        if self.instance and self.instance.pk:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise forms.ValidationError(f"Ya existe un proveedor registrado con el CUIT '{cuit}'.")
+        return cuit
 
-        # 2. Desactivar las desmarcadas sin borrarlas para preservar histórico
-        AsignacionZonaVendedor.objects.filter(
-            vendedor=vendedor
-        ).exclude(zona__in=zonas_seleccionadas).update(activo=False)
-
-        return vendedor
+    def clean_razon_social(self):
+        razon = self.cleaned_data.get('razon_social', '').strip()
+        if not razon:
+            raise forms.ValidationError("La razón social es obligatoria.")
+        return razon
 
 
 class PrecioProductoForm(forms.ModelForm):

@@ -1,0 +1,93 @@
+{% extends 'gestion/base_gestion.html' %}
+
+{% block title %}{{ titulo }} - Panel de Gestión{% endblock %}
+
+{% block content %}
+<div class="row mb-3 align-items-center">
+    <div class="col-8">
+        <h3 class="fw-bold mb-0 text-dark"><i class="bi bi-building me-2 text-primary"></i>{{ titulo }}</h3>
+    </div>
+    <div class="col-4 text-end">
+        <a href="{% url 'gestion:proveedores_list' %}" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-arrow-left me-1"></i> Volver a Proveedores
+        </a>
+    </div>
+</div>
+
+{% if form.non_field_errors %}
+<div class="alert alert-danger shadow-sm mb-4">
+    <h6 class="fw-bold mb-1"><i class="bi bi-x-circle me-1"></i> Errores en el formulario:</h6>
+    {% for error in form.non_field_errors %}
+        <p class="mb-0 small">{{ error }}</p>
+    {% endfor %}
+</div>
+{% endif %}
+
+<div class="row justify-content-center">
+    <div class="col-lg-9">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white py-3 border-0">
+                <h5 class="card-title fw-bold text-dark mb-0">Información del Proveedor</h5>
+            </div>
+            <div class="card-body p-4">
+                <form method="post" novalidate>
+                    {% csrf_token %}
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label for="{{ form.cuit.id_for_label }}" class="form-label fw-semibold">CUIT / CUIL *</label>
+                            {{ form.cuit }}
+                            <small class="text-muted">Identificador tributario único (10 u 11 dígitos numéricos).</small>
+                            {% if form.cuit.errors %}<div class="text-danger small mt-1">{{ form.cuit.errors.0 }}</div>{% endif %}
+                        </div>
+
+                        <div class="col-md-6">
+                            <label for="{{ form.razon_social.id_for_label }}" class="form-label fw-semibold">Razón Social *</label>
+                            {{ form.razon_social }}
+                            {% if form.razon_social.errors %}<div class="text-danger small mt-1">{{ form.razon_social.errors.0 }}</div>{% endif %}
+                        </div>
+
+                        <div class="col-md-12">
+                            <label for="{{ form.domicilio.id_for_label }}" class="form-label fw-semibold">Domicilio Comercial</label>
+                            {{ form.domicilio }}
+                            {% if form.domicilio.errors %}<div class="text-danger small mt-1">{{ form.domicilio.errors.0 }}</div>{% endif %}
+                        </div>
+
+                        <div class="col-md-6">
+                            <label for="{{ form.telefono.id_for_label }}" class="form-label fw-semibold">Teléfono de Contacto</label>
+                            {{ form.telefono }}
+                            {% if form.telefono.errors %}<div class="text-danger small mt-1">{{ form.telefono.errors.0 }}</div>{% endif %}
+                        </div>
+
+                        <div class="col-md-6">
+                            <label for="{{ form.email.id_for_label }}" class="form-label fw-semibold">Correo Electrónico</label>
+                            {{ form.email }}
+                            {% if form.email.errors %}<div class="text-danger small mt-1">{{ form.email.errors.0 }}</div>{% endif %}
+                        </div>
+
+                        <div class="col-md-12">
+                            <label for="{{ form.contacto_nombre.id_for_label }}" class="form-label fw-semibold">Nombre de la Persona de Contacto</label>
+                            {{ form.contacto_nombre }}
+                            <small class="text-muted">Nombre del referente de ventas o cobranzas del proveedor (opcional).</small>
+                            {% if form.contacto_nombre.errors %}<div class="text-danger small mt-1">{{ form.contacto_nombre.errors.0 }}</div>{% endif %}
+                        </div>
+
+                        <div class="col-12">
+                            <div class="form-check form-switch pt-2">
+                                {{ form.activo }}
+                                <label class="form-check-label fw-semibold" for="{{ form.activo.id_for_label }}">Proveedor Activo en Operaciones</label>
+                            </div>
+                        </div>
+
+                        <div class="col-12 d-flex justify-content-end gap-2 mt-4 pt-2 border-top">
+                            <a href="{% url 'gestion:proveedores_list' %}" class="btn btn-outline-secondary">Cancelar</a>
+                            <button type="submit" class="btn btn-primary fw-bold px-4">
+                                <i class="bi bi-check-circle me-1"></i> Guardar Proveedor
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

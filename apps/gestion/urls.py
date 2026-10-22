@@ -27,6 +27,12 @@ urlpatterns = [
     path('vendedores/<int:vendedor_id>/editar/', views.vendedor_editar_view, name='vendedor_editar'),
     path('vendedores/<int:vendedor_id>/toggle/', views.vendedor_toggle_view, name='vendedor_toggle'),
 
+    # Proveedores
+    path('proveedores/', views.proveedores_list_view, name='proveedores_list'),
+    path('proveedores/nuevo/', views.proveedor_crear_view, name='proveedor_crear'),
+    path('proveedores/<int:proveedor_id>/editar/', views.proveedor_editar_view, name='proveedor_editar'),
+    path('proveedores/<int:proveedor_id>/toggle/', views.proveedor_toggle_view, name='proveedor_toggle'),
+
     path('pedidos/', views.pedidos_list_view, name='pedidos_list'),
     path('deposito/', views.deposito_pedidos_view, name='deposito_pedidos'),
     path('listas-precio/', views.listas_precio_list_view, name='listas_precio_list'),
