@@ -1,0 +1,170 @@
+{% extends 'gestion/base_gestion.html' %}
+
+{% block title %}Vendedores - Panel de Gestión{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="h3 fw-bold mb-0 text-dark"><i class="bi bi-person-badge me-2 text-primary"></i>Equipo de Ventas</h2>
+        <p class="text-muted small mb-0">Gestión de vendedores, comisiones, cuentas de usuario asociadas y asignación de zonas de reparto.</p>
+    </div>
+    <a href="{% url 'gestion:vendedor_crear' %}" class="btn btn-primary fw-bold shadow-sm">
+        <i class="bi bi-person-plus-fill me-1"></i> Nuevo Vendedor
+    </a>
+</div>
+
+<!-- Filtros de búsqueda -->
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-body p-3">
+        <form method="get" class="row g-2 align-items-center">
+            <div class="col-md-5">
+                <div class="input-group">
+                    <span class="input-group-text bg-white text-muted"><i class="bi bi-search"></i></span>
+                    <input type="text" name="q" value="{{ query }}" class="form-control" placeholder="Buscar por nombre, apellido, legajo o DNI...">
+                </div>
+            </div>
+            <div class="col-md-3">
+                <select name="zona" class="form-select">
+                    <option value="">-- Todas las Zonas --</option>
+                    {% for z in zonas %}
+                    <option value="{{ z.id }}" {% if zona_actual == z.id %}selected{% endif %}>{{ z.nombre }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <select name="estado" class="form-select">
+                    <option value="">-- Estados --</option>
+                    <option value="activo" {% if estado_actual == 'activo' %}selected{% endif %}>Activos</option>
+                    <option value="inactivo" {% if estado_actual == 'inactivo' %}selected{% endif %}>Inactivos</option>
+                </select>
+            </div>
+            <div class="col-md-2 d-flex gap-1">
+                <button type="submit" class="btn btn-dark w-100 fw-bold">Filtrar</button>
+                <a href="{% url 'gestion:vendedores_list' %}" class="btn btn-outline-secondary" title="Limpiar"><i class="bi bi-x-circle"></i></a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Listado de vendedores -->
+<div class="card border-0 shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Legajo</th>
+                        <th>Vendedor</th>
+                        <th>Contacto / DNI</th>
+                        <th>Zonas Asignadas</th>
+                        <th class="text-center">% Comisión</th>
+                        <th class="text-center">Clientes</th>
+                        <th class="text-center">Usuario Sistema</th>
+                        <th class="text-center">Estado</th>
+                        <th class="text-end">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for vendedor in vendedores %}
+                    <tr>
+                        <td class="font-monospace small fw-bold text-muted">
+                            {{ vendedor.legajo|default:"—" }}
+                        </td>
+                        <td class="fw-bold text-dark">
+                            {{ vendedor.nombre_completo }}
+                        </td>
+                        <td class="small">
+                            {% if vendedor.telefono %}<div><i class="bi bi-telephone me-1 text-muted"></i>{{ vendedor.telefono }}</div>{% endif %}
+                            {% if vendedor.dni %}<small class="text-muted">DNI: {{ vendedor.dni }}</small>{% endif %}
+                        </td>
+                        <td>
+                            <div class="d-flex flex-wrap gap-1" style="max-width: 250px;">
+                                {% for asig in vendedor.asignaciones_zona.all %}
+                                    {% if asig.activo %}
+                                        <span class="badge bg-primary-subtle text-primary border border-primary-subtle">{{ asig.zona.nombre }}</span>
+                                    {% endif %}
+                                {% empty %}
+                                    <span class="text-muted small">Sin zonas asignadas</span>
+                                {% endfor %}
+                            </div>
+                        </td>
+                        <td class="text-center fw-bold">
+                            {{ vendedor.comision_porcentaje }}%
+                        </td>
+                        <td class="text-center">
+                            <span class="badge bg-secondary-subtle text-dark border">{{ vendedor.total_clientes }}</span>
+                        </td>
+                        <td class="text-center small">
+                            {% if vendedor.usuario %}
+                                <span class="badge bg-info-subtle text-dark"><i class="bi bi-person-check me-1"></i>{{ vendedor.usuario.username }}</span>
+                            {% else %}
+                                <span class="text-muted">Sin usuario</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-center">
+                            {% if vendedor.activo %}
+                                <span class="badge bg-success-subtle text-success border border-success-subtle">Activo</span>
+                            {% else %}
+                                <span class="badge bg-secondary-subtle text-secondary border">Inactivo</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-end">
+                            <div class="d-inline-flex gap-1">
+                                <a href="{% url 'gestion:vendedor_editar' vendedor.id %}" class="btn btn-sm btn-outline-primary fw-semibold" title="Editar Vendedor">
+                                    <i class="bi bi-pencil me-1"></i> Editar
+                                </a>
+                                <form method="post" action="{% url 'gestion:vendedor_toggle' vendedor.id %}" class="d-inline" onsubmit="return confirm('¿Confirma cambiar el estado de {{ vendedor.nombre_completo }}?');">
+                                    {% csrf_token %}
+                                    {% if vendedor.activo %}
+                                        <button type="submit" class="btn btn-sm btn-outline-warning" title="Desactivar Vendedor">
+                                            <i class="bi bi-person-dash"></i>
+                                        </button>
+                                    {% else %}
+                                        <button type="submit" class="btn btn-sm btn-outline-success" title="Activar Vendedor">
+                                            <i class="bi bi-person-check"></i>
+                                        </button>
+                                    {% endif %}
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="9" class="text-center py-5 text-muted">
+                            <i class="bi bi-people display-4 d-block mb-3 text-secondary"></i>
+                            <p class="fs-5 mb-0">No se encontraron vendedores registrados.</p>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        {% if page_obj.has_other_pages %}
+        <div class="card-footer bg-white border-0 py-3">
+            <nav aria-label="Paginación de vendedores">
+                <ul class="pagination pagination-sm justify-content-center mb-0">
+                    {% if page_obj.has_previous %}
+                        <li class="page-item"><a class="page-link" href="?page=1{% if query_string %}&{{ query_string }}{% endif %}">&laquo; Primera</a></li>
+                        <li class="page-item"><a class="page-link" href="?page={{ page_obj.previous_page_number }}{% if query_string %}&{{ query_string }}{% endif %}">Anterior</a></li>
+                    {% else %}
+                        <li class="page-item disabled"><span class="page-link">&laquo; Primera</span></li>
+                        <li class="page-item disabled"><span class="page-link">Anterior</span></li>
+                    {% endif %}
+
+                    <li class="page-item disabled"><span class="page-link">Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }} ({{ page_obj.paginator.count }} registros)</span></li>
+
+                    {% if page_obj.has_next %}
+                        <li class="page-item"><a class="page-link" href="?page={{ page_obj.next_page_number }}{% if query_string %}&{{ query_string }}{% endif %}">Siguiente</a></li>
+                        <li class="page-item"><a class="page-link" href="?page={{ page_obj.paginator.num_pages }}{% if query_string %}&{{ query_string }}{% endif %}">Última &raquo;</a></li>
+                    {% else %}
+                        <li class="page-item disabled"><span class="page-link">Siguiente</span></li>
+                        <li class="page-item disabled"><span class="page-link">Última &raquo;</span></li>
+                    {% endif %}
+                </ul>
+            </nav>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

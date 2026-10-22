@@ -18,8 +18,9 @@ from pedidos.services import PedidoService
 # ==============================================================================
 
 def login_view(request):
+    next_url = request.POST.get('next') or request.GET.get('next', '')
     if request.user.is_authenticated:
-        return _redirect_by_role(request.user)
+        return _redirect_by_role(request.user, next_url, request)
 
     if request.method == 'POST':
         identificador = request.POST.get('identificador', '').strip()
@@ -27,22 +28,22 @@ def login_view(request):
 
         if not identificador or not password:
             messages.error(request, 'Debe ingresar un identificador y contraseña.')
-            return render(request, 'portal/login.html')
+            return render(request, 'portal/login.html', {'next': next_url})
 
         user = authenticate(request, username=identificador, password=password)
 
         if user is not None:
             if not user.is_active:
                 messages.error(request, 'La cuenta de usuario se encuentra inactiva.')
-                return render(request, 'portal/login.html')
+                return render(request, 'portal/login.html', {'next': next_url})
 
             login(request, user)
             messages.success(request, f'¡Bienvenido/a {user.nombre_completo}!')
-            return _redirect_by_role(user)
+            return _redirect_by_role(user, next_url, request)
         else:
             messages.error(request, 'Credenciales de acceso incorrectas.')
 
-    return render(request, 'portal/login.html')
+    return render(request, 'portal/login.html', {'next': next_url})
 
 
 def logout_view(request):
@@ -51,11 +52,27 @@ def logout_view(request):
     return redirect('portal:login')
 
 
-def _redirect_by_role(user):
-    if user.rol == 'CLIENTE' or hasattr(user, 'perfil_cliente'):
-        return redirect('portal:catalogo')
-    elif user.rol in ['VENDEDOR', 'ADMIN', 'SUPERVISOR', 'FACTURACION', 'DEPOSITO'] or user.is_superuser:
+def _redirect_by_role(user, next_url=None, request=None):
+    if next_url and request:
+        from django.utils.http import url_has_allowed_host_and_scheme
+        if url_has_allowed_host_and_scheme(next_url, allowed_hosts={request.get_host()}):
+            # Aislamiento por rol: clientes y vendedores no pueden acceder a /gestion/
+            if user.rol == 'CLIENTE' and not next_url.startswith('/gestion/'):
+                return redirect(next_url)
+            elif user.rol == 'VENDEDOR' and not next_url.startswith('/gestion/'):
+                return redirect(next_url)
+            elif user.rol in ['ADMIN', 'SUPERVISOR', 'FACTURACION', 'DEPOSITO'] or user.is_superuser:
+                return redirect(next_url)
+
+    # Destino habitual según rol
+    if user.rol in ['ADMIN', 'SUPERVISOR', 'FACTURACION'] or user.is_superuser:
+        return redirect('gestion:dashboard')
+    elif user.rol == 'DEPOSITO':
+        return redirect('gestion:deposito_pedidos')
+    elif user.rol == 'VENDEDOR':
         return redirect('portal:vendedor_pedidos')
+    elif user.rol == 'CLIENTE' or hasattr(user, 'perfil_cliente'):
+        return redirect('portal:catalogo')
     return redirect('portal:catalogo')
 
 

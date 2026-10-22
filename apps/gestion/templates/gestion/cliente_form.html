@@ -14,42 +14,102 @@
     </div>
 </div>
 
-<form method="post">
+{% if dependencias_faltantes %}
+<div class="alert alert-warning border-0 shadow-sm mb-4">
+    <h6 class="fw-bold"><i class="bi bi-exclamation-triangle me-1"></i> Datos maestros requeridos pendientes</h6>
+    <p class="small mb-2">Para una correcta configuración del cliente, configure previamente:</p>
+    <div class="d-flex flex-wrap gap-2">
+        {% for dep in dependencias_faltantes %}
+            <a href="{{ dep.url }}" class="btn btn-sm btn-outline-dark bg-white" {% if dep.admin %}target="_blank"{% endif %}>
+                <i class="bi bi-box-arrow-up-right me-1"></i> {{ dep.nombre }} {% if dep.admin %}<small class="badge bg-secondary">Admin</small>{% endif %}
+            </a>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+{% if form.non_field_errors %}
+<div class="alert alert-danger shadow-sm mb-4">
+    <h6 class="fw-bold mb-1"><i class="bi bi-x-circle me-1"></i> Errores en el formulario:</h6>
+    {% for error in form.non_field_errors %}
+        <p class="mb-0 small">{{ error }}</p>
+    {% endfor %}
+</div>
+{% endif %}
+
+<form method="post" novalidate>
     {% csrf_token %}
     <div class="row g-4">
         <!-- SECCIÓN 1: DATOS COMERCIALES -->
         <div class="col-12 col-md-6">
             <div class="card border-0 shadow-sm h-100">
-                <div class="card-header bg-white py-3">
-                    <h6 class="mb-0 fw-bold"><i class="bi bi-building me-2 text-primary"></i>Datos Comerciales & Identificación</h6>
+                <div class="card-header bg-white py-3 border-0">
+                    <h6 class="mb-0 fw-bold text-dark"><i class="bi bi-building me-2 text-primary"></i>Datos Comerciales & Identificación</h6>
                 </div>
                 <div class="card-body p-3">
                     <div class="mb-3">
                         <label for="{{ form.razon_social.id_for_label }}" class="form-label small fw-bold">Razón Social *</label>
                         {{ form.razon_social }}
+                        {% if form.razon_social.errors %}<div class="text-danger small mt-1">{{ form.razon_social.errors.0 }}</div>{% endif %}
                     </div>
                     <div class="mb-3">
                         <label for="{{ form.nombre_fantasia.id_for_label }}" class="form-label small fw-bold">Nombre de Fantasía</label>
                         {{ form.nombre_fantasia }}
+                        {% if form.nombre_fantasia.errors %}<div class="text-danger small mt-1">{{ form.nombre_fantasia.errors.0 }}</div>{% endif %}
                     </div>
                     <div class="row g-2 mb-3">
                         <div class="col-6">
                             <label for="{{ form.cuit.id_for_label }}" class="form-label small fw-bold">CUIT (11 dígitos) *</label>
                             {{ form.cuit }}
+                            {% if form.cuit.errors %}<div class="text-danger small mt-1">{{ form.cuit.errors.0 }}</div>{% endif %}
                         </div>
                         <div class="col-6">
                             <label for="{{ form.condicion_iva.id_for_label }}" class="form-label small fw-bold">Condición IVA *</label>
                             {{ form.condicion_iva }}
+                            {% if form.condicion_iva.errors %}<div class="text-danger small mt-1">{{ form.condicion_iva.errors.0 }}</div>{% endif %}
                         </div>
                     </div>
                     <div class="row g-2 mb-3">
                         <div class="col-6">
-                            <label for="{{ form.telefono.id_for_label }}" class="form-label small fw-bold">Teléfono Contacto</label>
+                            <label for="{{ form.telefono.id_for_label }}" class="form-label small fw-bold">Teléfono Principal</label>
                             {{ form.telefono }}
+                            {% if form.telefono.errors %}<div class="text-danger small mt-1">{{ form.telefono.errors.0 }}</div>{% endif %}
                         </div>
                         <div class="col-6">
-                            <label for="{{ form.email.id_for_label }}" class="form-label small fw-bold">E-mail</label>
+                            <label for="{{ form.telefono_alt.id_for_label }}" class="form-label small fw-bold">Teléfono Alternativo</label>
+                            {{ form.telefono_alt }}
+                            {% if form.telefono_alt.errors %}<div class="text-danger small mt-1">{{ form.telefono_alt.errors.0 }}</div>{% endif %}
+                        </div>
+                    </div>
+                    <div class="row g-2 mb-3">
+                        <div class="col-6">
+                            <label for="{{ form.email.id_for_label }}" class="form-label small fw-bold">Correo Electrónico</label>
                             {{ form.email }}
+                            {% if form.email.errors %}<div class="text-danger small mt-1">{{ form.email.errors.0 }}</div>{% endif %}
+                        </div>
+                        <div class="col-6">
+                            <label for="{{ form.contacto.id_for_label }}" class="form-label small fw-bold">Persona de Contacto</label>
+                            {{ form.contacto }}
+                            {% if form.contacto.errors %}<div class="text-danger small mt-1">{{ form.contacto.errors.0 }}</div>{% endif %}
+                        </div>
+                    </div>
+
+                    <!-- Usuario de Portal -->
+                    <div class="p-3 bg-light rounded mt-3 border">
+                        <div class="form-check form-switch mb-2">
+                            {{ form.crear_usuario_portal }}
+                            <label class="form-check-label fw-bold" for="{{ form.crear_usuario_portal.id_for_label }}">
+                                {{ form.crear_usuario_portal.label }}
+                            </label>
+                        </div>
+                        <small class="text-muted d-block mb-2">{{ form.crear_usuario_portal.help_text }}</small>
+                        {% if form.crear_usuario_portal.errors %}<div class="text-danger small mb-2">{{ form.crear_usuario_portal.errors.0 }}</div>{% endif %}
+
+                        <div>
+                            <label for="{{ form.password_portal.id_for_label }}" class="form-label small fw-bold">{{ form.password_portal.label }}</label>
+                            {{ form.password_portal }}
+                            <small class="text-muted">{{ form.password_portal.help_text }}</small>
+                            {% if form.password_portal.errors %}<div class="text-danger small mt-1">{{ form.password_portal.errors.0 }}</div>{% endif %}
                         </div>
                     </div>
                 </div>
@@ -59,47 +119,55 @@
         <!-- SECCIÓN 2: LOGÍSTICA & FACTURACIÓN -->
         <div class="col-12 col-md-6">
             <div class="card border-0 shadow-sm h-100">
-                <div class="card-header bg-white py-3">
-                    <h6 class="mb-0 fw-bold"><i class="bi bi-truck me-2 text-success"></i>Logística, Reparto y Lista de Precios</h6>
+                <div class="card-header bg-white py-3 border-0">
+                    <h6 class="mb-0 fw-bold text-dark"><i class="bi bi-truck me-2 text-success"></i>Logística, Reparto y Lista de Precios</h6>
                 </div>
                 <div class="card-body p-3">
                     <div class="mb-3">
                         <label for="{{ form.domicilio.id_for_label }}" class="form-label small fw-bold">Domicilio Comercial *</label>
                         {{ form.domicilio }}
+                        {% if form.domicilio.errors %}<div class="text-danger small mt-1">{{ form.domicilio.errors.0 }}</div>{% endif %}
                     </div>
                     <div class="row g-2 mb-3">
                         <div class="col-6">
                             <label for="{{ form.localidad.id_for_label }}" class="form-label small fw-bold">Localidad</label>
                             {{ form.localidad }}
+                            {% if form.localidad.errors %}<div class="text-danger small mt-1">{{ form.localidad.errors.0 }}</div>{% endif %}
                         </div>
                         <div class="col-6">
                             <label for="{{ form.zona.id_for_label }}" class="form-label small fw-bold">Zona Logística</label>
                             {{ form.zona }}
+                            {% if form.zona.errors %}<div class="text-danger small mt-1">{{ form.zona.errors.0 }}</div>{% endif %}
                         </div>
                     </div>
                     <div class="row g-2 mb-3">
                         <div class="col-6">
                             <label for="{{ form.vendedor.id_for_label }}" class="form-label small fw-bold">Vendedor Asignado</label>
                             {{ form.vendedor }}
+                            {% if form.vendedor.errors %}<div class="text-danger small mt-1">{{ form.vendedor.errors.0 }}</div>{% endif %}
                         </div>
                         <div class="col-6">
                             <label for="{{ form.dia_reparto.id_for_label }}" class="form-label small fw-bold">Día Fijo de Reparto</label>
                             {{ form.dia_reparto }}
+                            {% if form.dia_reparto.errors %}<div class="text-danger small mt-1">{{ form.dia_reparto.errors.0 }}</div>{% endif %}
                         </div>
                     </div>
                     <div class="row g-2 mb-3">
                         <div class="col-6">
-                            <label for="{{ form.lista_precio_default.id_for_label }}" class="form-label small fw-bold">Lista de Precios *</label>
-                            {{ form.lista_precio_default }}
+                            <label for="{{ form.tipo_lista_precio.id_for_label }}" class="form-label small fw-bold">Lista de Precios *</label>
+                            {{ form.tipo_lista_precio }}
+                            {% if form.tipo_lista_precio.errors %}<div class="text-danger small mt-1">{{ form.tipo_lista_precio.errors.0 }}</div>{% endif %}
                         </div>
                         <div class="col-6">
                             <label for="{{ form.monto_minimo_pedido.id_for_label }}" class="form-label small fw-bold">Monto Mínimo Pedido ($)</label>
                             {{ form.monto_minimo_pedido }}
+                            {% if form.monto_minimo_pedido.errors %}<div class="text-danger small mt-1">{{ form.monto_minimo_pedido.errors.0 }}</div>{% endif %}
                         </div>
                     </div>
                     <div class="mb-3">
                         <label for="{{ form.estado.id_for_label }}" class="form-label small fw-bold">Estado de Cuenta *</label>
                         {{ form.estado }}
+                        {% if form.estado.errors %}<div class="text-danger small mt-1">{{ form.estado.errors.0 }}</div>{% endif %}
                     </div>
                 </div>
             </div>

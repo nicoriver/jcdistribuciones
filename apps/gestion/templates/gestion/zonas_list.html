@@ -1,0 +1,147 @@
+{% extends 'gestion/base_gestion.html' %}
+
+{% block title %}Zonas de Reparto - Panel de Gestión{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="h3 fw-bold mb-0 text-dark"><i class="bi bi-geo-alt me-2 text-primary"></i>Zonas Logísticas de Reparto</h2>
+        <p class="text-muted small mb-0">Administración de circuitos de distribución geográfica, días de reparto habituales y cobertura.</p>
+    </div>
+    <a href="{% url 'gestion:zona_crear' %}" class="btn btn-primary fw-bold shadow-sm">
+        <i class="bi bi-plus-circle me-1"></i> Nueva Zona
+    </a>
+</div>
+
+<!-- Filtros de búsqueda -->
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-body p-3">
+        <form method="get" class="row g-2 align-items-center">
+            <div class="col-md-6">
+                <div class="input-group">
+                    <span class="input-group-text bg-white text-muted"><i class="bi bi-search"></i></span>
+                    <input type="text" name="q" value="{{ query }}" class="form-control" placeholder="Buscar por nombre, descripción o día habitual...">
+                </div>
+            </div>
+            <div class="col-md-3">
+                <select name="estado" class="form-select">
+                    <option value="">-- Todos los Estados --</option>
+                    <option value="activa" {% if estado_actual == 'activa' %}selected{% endif %}>Zonas Activas</option>
+                    <option value="inactiva" {% if estado_actual == 'inactiva' %}selected{% endif %}>Zonas Inactivas</option>
+                </select>
+            </div>
+            <div class="col-md-3 d-flex gap-1">
+                <button type="submit" class="btn btn-dark w-100 fw-bold">Filtrar</button>
+                <a href="{% url 'gestion:zonas_list' %}" class="btn btn-outline-secondary" title="Limpiar"><i class="bi bi-x-circle"></i></a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Listado de zonas -->
+<div class="card border-0 shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Nombre de Zona</th>
+                        <th>Descripción / Cobertura</th>
+                        <th>Día Habitual de Reparto</th>
+                        <th class="text-center">Clientes</th>
+                        <th class="text-center">Vendedores Asignados</th>
+                        <th class="text-center">Estado</th>
+                        <th class="text-end">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for zona in zonas %}
+                    <tr>
+                        <td class="fw-bold text-dark">
+                            <i class="bi bi-geo-alt-fill text-primary me-1"></i> {{ zona.nombre }}
+                        </td>
+                        <td class="small text-muted">
+                            {{ zona.descripcion|default:"Sin descripción registrada" }}
+                        </td>
+                        <td>
+                            {% if zona.dia_reparto_defecto %}
+                                <span class="badge bg-info-subtle text-info-emphasis border border-info-subtle">
+                                    <i class="bi bi-calendar-event me-1"></i>{{ zona.dia_reparto_defecto }}
+                                </span>
+                            {% else %}
+                                <span class="text-muted small">Sin día fijo</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-center">
+                            <span class="badge bg-secondary-subtle text-dark border">{{ zona.total_clientes }}</span>
+                        </td>
+                        <td class="text-center">
+                            <span class="badge bg-secondary-subtle text-dark border">{{ zona.total_vendedores }}</span>
+                        </td>
+                        <td class="text-center">
+                            {% if zona.activa %}
+                                <span class="badge bg-success-subtle text-success border border-success-subtle">Activa</span>
+                            {% else %}
+                                <span class="badge bg-secondary-subtle text-secondary border">Inactiva</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-end">
+                            <div class="d-inline-flex gap-1">
+                                <a href="{% url 'gestion:zona_editar' zona.id %}" class="btn btn-sm btn-outline-primary fw-semibold" title="Editar Zona">
+                                    <i class="bi bi-pencil me-1"></i> Editar
+                                </a>
+                                <form method="post" action="{% url 'gestion:zona_toggle' zona.id %}" class="d-inline" onsubmit="return confirm('¿Confirma cambiar el estado de la zona {{ zona.nombre }}?');">
+                                    {% csrf_token %}
+                                    {% if zona.activa %}
+                                        <button type="submit" class="btn btn-sm btn-outline-warning" title="Desactivar Zona">
+                                            <i class="bi bi-pause-circle"></i>
+                                        </button>
+                                    {% else %}
+                                        <button type="submit" class="btn btn-sm btn-outline-success" title="Activar Zona">
+                                            <i class="bi bi-play-circle"></i>
+                                        </button>
+                                    {% endif %}
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="7" class="text-center py-5 text-muted">
+                            <i class="bi bi-geo display-4 d-block mb-3 text-secondary"></i>
+                            <p class="fs-5 mb-0">No se encontraron zonas de reparto registradas.</p>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        {% if page_obj.has_other_pages %}
+        <div class="card-footer bg-white border-0 py-3">
+            <nav aria-label="Paginación de zonas">
+                <ul class="pagination pagination-sm justify-content-center mb-0">
+                    {% if page_obj.has_previous %}
+                        <li class="page-item"><a class="page-link" href="?page=1{% if query_string %}&{{ query_string }}{% endif %}">&laquo; Primera</a></li>
+                        <li class="page-item"><a class="page-link" href="?page={{ page_obj.previous_page_number }}{% if query_string %}&{{ query_string }}{% endif %}">Anterior</a></li>
+                    {% else %}
+                        <li class="page-item disabled"><span class="page-link">&laquo; Primera</span></li>
+                        <li class="page-item disabled"><span class="page-link">Anterior</span></li>
+                    {% endif %}
+
+                    <li class="page-item disabled"><span class="page-link">Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }} ({{ page_obj.paginator.count }} registros)</span></li>
+
+                    {% if page_obj.has_next %}
+                        <li class="page-item"><a class="page-link" href="?page={{ page_obj.next_page_number }}{% if query_string %}&{{ query_string }}{% endif %}">Siguiente</a></li>
+                        <li class="page-item"><a class="page-link" href="?page={{ page_obj.paginator.num_pages }}{% if query_string %}&{{ query_string }}{% endif %}">Última &raquo;</a></li>
+                    {% else %}
+                        <li class="page-item disabled"><span class="page-link">Siguiente</span></li>
+                        <li class="page-item disabled"><span class="page-link">Última &raquo;</span></li>
+                    {% endif %}
+                </ul>
+            </nav>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

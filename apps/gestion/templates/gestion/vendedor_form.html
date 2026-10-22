@@ -1,0 +1,128 @@
+{% extends 'gestion/base_gestion.html' %}
+
+{% block title %}{{ titulo }} - Panel de Gestión{% endblock %}
+
+{% block content %}
+<div class="row mb-3 align-items-center">
+    <div class="col-8">
+        <h3 class="fw-bold mb-0 text-dark"><i class="bi bi-person-badge me-2 text-primary"></i>{{ titulo }}</h3>
+    </div>
+    <div class="col-4 text-end">
+        <a href="{% url 'gestion:vendedores_list' %}" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-arrow-left me-1"></i> Volver a Vendedores
+        </a>
+    </div>
+</div>
+
+{% if form.non_field_errors %}
+<div class="alert alert-danger shadow-sm mb-4">
+    <h6 class="fw-bold mb-1"><i class="bi bi-x-circle me-1"></i> Errores en el formulario:</h6>
+    {% for error in form.non_field_errors %}
+        <p class="mb-0 small">{{ error }}</p>
+    {% endfor %}
+</div>
+{% endif %}
+
+<form method="post" novalidate>
+    {% csrf_token %}
+    <div class="row g-4">
+        <!-- DATOS PERSONALES Y LABORALES -->
+        <div class="col-lg-7">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-header bg-white py-3 border-0">
+                    <h5 class="card-title fw-bold text-dark mb-0"><i class="bi bi-person-vcard me-2 text-primary"></i>Datos Personales y de Identificación</h5>
+                </div>
+                <div class="card-body p-4">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label for="{{ form.nombre.id_for_label }}" class="form-label fw-semibold">Nombre *</label>
+                            {{ form.nombre }}
+                            {% if form.nombre.errors %}<div class="text-danger small mt-1">{{ form.nombre.errors.0 }}</div>{% endif %}
+                        </div>
+
+                        <div class="col-md-6">
+                            <label for="{{ form.apellido.id_for_label }}" class="form-label fw-semibold">Apellido *</label>
+                            {{ form.apellido }}
+                            {% if form.apellido.errors %}<div class="text-danger small mt-1">{{ form.apellido.errors.0 }}</div>{% endif %}
+                        </div>
+
+                        <div class="col-md-6">
+                            <label for="{{ form.legajo.id_for_label }}" class="form-label fw-semibold">Legajo Interno</label>
+                            {{ form.legajo }}
+                            {% if form.legajo.errors %}<div class="text-danger small mt-1">{{ form.legajo.errors.0 }}</div>{% endif %}
+                        </div>
+
+                        <div class="col-md-6">
+                            <label for="{{ form.dni.id_for_label }}" class="form-label fw-semibold">DNI</label>
+                            {{ form.dni }}
+                            {% if form.dni.errors %}<div class="text-danger small mt-1">{{ form.dni.errors.0 }}</div>{% endif %}
+                        </div>
+
+                        <div class="col-md-6">
+                            <label for="{{ form.telefono.id_for_label }}" class="form-label fw-semibold">Teléfono de Contacto</label>
+                            {{ form.telefono }}
+                            {% if form.telefono.errors %}<div class="text-danger small mt-1">{{ form.telefono.errors.0 }}</div>{% endif %}
+                        </div>
+
+                        <div class="col-md-6">
+                            <label for="{{ form.comision_porcentaje.id_for_label }}" class="form-label fw-semibold">% Comisión por Venta</label>
+                            {{ form.comision_porcentaje }}
+                            {% if form.comision_porcentaje.errors %}<div class="text-danger small mt-1">{{ form.comision_porcentaje.errors.0 }}</div>{% endif %}
+                        </div>
+
+                        <div class="col-md-12">
+                            <label for="{{ form.usuario.id_for_label }}" class="form-label fw-semibold">Usuario del Sistema Vinculado</label>
+                            {{ form.usuario }}
+                            <small class="text-muted">Asocie una cuenta de usuario existente con rol VENDEDOR para permitirle ingresar al portal móvil de toma de pedidos.</small>
+                            {% if form.usuario.errors %}<div class="text-danger small mt-1">{{ form.usuario.errors.0 }}</div>{% endif %}
+                        </div>
+
+                        <div class="col-12">
+                            <div class="form-check form-switch pt-2">
+                                {{ form.activo }}
+                                <label class="form-check-label fw-semibold" for="{{ form.activo.id_for_label }}">Vendedor Activo en Operaciones</label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ASIGNACIÓN DE ZONAS -->
+        <div class="col-lg-5">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-header bg-white py-3 border-0">
+                    <h5 class="card-title fw-bold text-dark mb-0"><i class="bi bi-geo-alt me-2 text-success"></i>Zonas Logísticas Asignadas</h5>
+                </div>
+                <div class="card-body p-4">
+                    <p class="text-muted small">Marque las zonas de cobertura comercial que este vendedor tendrá autorizadas para atender clientes y tomar pedidos.</p>
+
+                    <div class="p-3 bg-light rounded border" style="max-height: 320px; overflow-y: auto;">
+                        {% if form.zonas.field.queryset.exists %}
+                            {% for pk, choice_label in form.zonas.field.choices %}
+                            <div class="form-check mb-2">
+                                <input class="form-check-input" type="checkbox" name="zonas" value="{{ pk }}" id="zona_check_{{ pk }}"
+                                       {% if pk in form.zonas.value or pk|stringformat:"s" in form.zonas.value or pk in form.zonas.initial %}checked{% endif %}>
+                                <label class="form-check-label fw-semibold text-dark" for="zona_check_{{ pk }}">
+                                    {{ choice_label }}
+                                </label>
+                            </div>
+                            {% endfor %}
+                        {% else %}
+                            <p class="text-muted small mb-0">No hay zonas de reparto registradas. Cree una en <a href="{% url 'gestion:zona_crear' %}">Zonas</a>.</p>
+                        {% endif %}
+                    </div>
+                    {% if form.zonas.errors %}<div class="text-danger small mt-1">{{ form.zonas.errors.0 }}</div>{% endif %}
+
+                    <div class="d-flex justify-content-end gap-2 mt-4 pt-3 border-top">
+                        <a href="{% url 'gestion:vendedores_list' %}" class="btn btn-outline-secondary">Cancelar</a>
+                        <button type="submit" class="btn btn-primary fw-bold px-4">
+                            <i class="bi bi-check-circle me-1"></i> Guardar Vendedor
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</form>
+{% endblock %}

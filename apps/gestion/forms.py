@@ -1,16 +1,47 @@
+from decimal import Decimal
 from django import forms
-from clientes.models import Cliente
-from productos.models import Producto, PrecioProducto, ListaPrecio
+from django.db.models import Q
+from django.utils.crypto import get_random_string
+
+from clientes.models import Cliente, Vendedor, AsignacionZonaVendedor, CondicionIVA
+from geografia.models import Zona, Localidad
+from productos.models import (
+    Producto,
+    PrecioProducto,
+    TipoListaPrecio,
+    Categoria,
+    Marca,
+    AlicuotaIVA,
+    IVA_CHOICES
+)
 from usuarios.models import Usuario
 
 
 class ClienteForm(forms.ModelForm):
+    crear_usuario_portal = forms.BooleanField(
+        required=False,
+        initial=False,
+        label="Habilitar usuario de acceso al portal comercial",
+        help_text="Crea una cuenta para que el cliente ingrese al portal mayorista",
+        widget=forms.CheckboxInput(attrs={'class': 'form-check-input'})
+    )
+    password_portal = forms.CharField(
+        required=False,
+        label="Contraseña del Portal",
+        help_text="Opcional. Si se deja en blanco se generará una contraseña segura aleatoria.",
+        widget=forms.PasswordInput(attrs={
+            'class': 'form-control',
+            'placeholder': 'Dejar en blanco para autogenerar'
+        })
+    )
+
     class Meta:
         model = Cliente
         fields = [
             'razon_social', 'nombre_fantasia', 'cuit', 'condicion_iva',
             'domicilio', 'localidad', 'zona', 'vendedor', 'dia_reparto',
-            'tipo_lista_precio', 'telefono', 'email', 'monto_minimo_pedido', 'estado'
+            'tipo_lista_precio', 'telefono', 'telefono_alt', 'email', 'contacto',
+            'monto_minimo_pedido', 'estado'
         ]
         widgets = {
             'razon_social': forms.TextInput(attrs={'class': 'form-control'}),
@@ -24,34 +55,83 @@ class ClienteForm(forms.ModelForm):
             'dia_reparto': forms.Select(attrs={'class': 'form-select'}),
             'tipo_lista_precio': forms.Select(attrs={'class': 'form-select'}),
             'telefono': forms.TextInput(attrs={'class': 'form-control'}),
+            'telefono_alt': forms.TextInput(attrs={'class': 'form-control'}),
             'email': forms.EmailInput(attrs={'class': 'form-control'}),
+            'contacto': forms.TextInput(attrs={'class': 'form-control'}),
             'monto_minimo_pedido': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01'}),
             'estado': forms.Select(attrs={'class': 'form-select'}),
         }
 
-    def save(self, commit=True):
-        cliente = super().save(commit=False)
-        cuit_clean = self.cleaned_data['cuit'].strip().replace('-', '')
-        cliente.cuit = cuit_clean
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['tipo_lista_precio'].label = "Lista de Precios"
+        if self.instance and self.instance.pk and self.instance.usuario:
+            self.fields['crear_usuario_portal'].initial = True
+            self.fields['crear_usuario_portal'].help_text = (
+                f"Usuario actual vinculado: {self.instance.usuario.username} ({self.instance.usuario.email or 'sin email'})"
+            )
 
-        # Si el cliente no tiene usuario asignado aún, crear o buscar el Usuario portal correspondiente
-        if not hasattr(cliente, 'usuario') or cliente.usuario is None:
-            user = Usuario.objects.filter(cuit_dni=cuit_clean).first()
-            if not user:
-                user = Usuario.objects.filter(username=cuit_clean).first()
+    def clean_cuit(self):
+        cuit = self.cleaned_data.get('cuit', '').strip().replace('-', '').replace('.', '')
+        if not cuit:
+            raise forms.ValidationError("El CUIT es obligatorio.")
+        if not cuit.isdigit():
+            raise forms.ValidationError("El CUIT debe contener únicamente números.")
+        if len(cuit) < 10 or len(cuit) > 11:
+            raise forms.ValidationError("El CUIT debe tener entre 10 y 11 dígitos numéricos.")
 
-            if not user:
-                email_val = self.cleaned_data.get('email') or None
-                user = Usuario.objects.create_user(
-                    username=cuit_clean,
-                    cuit=cuit_clean,
-                    email=email_val,
-                    password=cuit_clean,
-                    nombre_completo=self.cleaned_data['razon_social'],
-                    rol='CLIENTE'
+        qs = Cliente.objects.filter(cuit=cuit)
+        if self.instance and self.instance.pk:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise forms.ValidationError("Ya existe un cliente registrado con este CUIT.")
+
+        return cuit
+
+    def clean(self):
+        cleaned_data = super().clean()
+        crear_usuario = cleaned_data.get('crear_usuario_portal')
+        cuit = cleaned_data.get('cuit')
+
+        if crear_usuario and cuit and (not self.instance or not self.instance.usuario):
+            # Verificar si ya existe usuario con ese CUIT asignado a otro cliente
+            user_existente = Usuario.objects.filter(
+                Q(username=cuit) | Q(cuit_dni=cuit)
+            ).first()
+            if user_existente and hasattr(user_existente, 'perfil_cliente') and user_existente.perfil_cliente != self.instance:
+                self.add_error(
+                    'crear_usuario_portal',
+                    f"El usuario con CUIT/identificador '{cuit}' ya está asignado a otro cliente."
                 )
 
-            cliente.usuario = user
+        return cleaned_data
+
+    def save(self, commit=True):
+        cliente = super().save(commit=False)
+        cuit_clean = self.cleaned_data['cuit']
+        cliente.cuit = cuit_clean
+
+        crear_usuario = self.cleaned_data.get('crear_usuario_portal', False)
+        # Solo crear usuario si se solicita explícitamente y el cliente no posee usuario aún
+        if crear_usuario and not cliente.usuario:
+            pwd = self.cleaned_data.get('password_portal', '').strip()
+            if not pwd:
+                pwd = get_random_string(12)
+            email_val = self.cleaned_data.get('email', '').strip() or None
+
+            try:
+                user = Usuario.objects.create_user(
+                    username=cuit_clean,
+                    cuit_dni=cuit_clean,
+                    email=email_val,
+                    password=pwd,
+                    nombre=self.cleaned_data.get('razon_social', ''),
+                    rol='CLIENTE'
+                )
+                cliente.usuario = user
+            except Exception:
+                # La creación del cliente nunca debe abortar por fallas accesorias al crear usuario
+                pass
 
         if commit:
             cliente.save()
@@ -64,7 +144,7 @@ class ProductoForm(forms.ModelForm):
         fields = [
             'codigo', 'codigo_barras', 'nombre', 'descripcion',
             'categoria', 'marca', 'alicuota_iva', 'costo_base',
-            'stock_actual', 'punto_reposicion', 'controla_stock', 'activo'
+            'punto_reposicion', 'controla_stock', 'activo'
         ]
         widgets = {
             'codigo': forms.TextInput(attrs={'class': 'form-control'}),
@@ -75,28 +155,170 @@ class ProductoForm(forms.ModelForm):
             'marca': forms.Select(attrs={'class': 'form-select'}),
             'alicuota_iva': forms.Select(attrs={'class': 'form-select'}),
             'costo_base': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01'}),
-            'stock_actual': forms.NumberInput(attrs={'class': 'form-control', 'step': '1'}),
             'punto_reposicion': forms.NumberInput(attrs={'class': 'form-control', 'step': '1'}),
             'controla_stock': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
             'activo': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
         }
 
     def __init__(self, *args, **kwargs):
+        # Mapear parámetros retrocompatibles si provienen de POST antiguo
+        data = kwargs.get('data')
+        if data:
+            data = data.copy()
+            if 'costo' in data and 'costo_base' not in data:
+                data['costo_base'] = data['costo']
+            if 'codigo_barra' in data and 'codigo_barras' not in data:
+                data['codigo_barras'] = data['codigo_barra']
+            if 'alicuota_iva' in data:
+                val = str(data.get('alicuota_iva')).strip()
+                if val.isdigit():
+                    alicuota_obj = AlicuotaIVA.objects.filter(id=int(val)).first()
+                    if alicuota_obj:
+                        data['alicuota_iva'] = str(alicuota_obj.porcentaje)
+            kwargs['data'] = data
+
         super().__init__(*args, **kwargs)
         self.fields['codigo_barras'].required = False
         self.fields['descripcion'].required = False
-        # Si llega 'costo' por POST antiguo, mapearlo a 'costo_base'
-        if self.data and 'costo' in self.data and 'costo_base' not in self.data:
-            self.data = self.data.copy()
-            self.data['costo_base'] = self.data['costo']
-        # Si llega 'alicuota_iva' como id de AlicuotaIVA, mapearlo a su porcentaje
-        if self.data and 'alicuota_iva' in self.data:
-            val = str(self.data.get('alicuota_iva')).strip()
-            if val.isdigit():
-                alicuota_obj = AlicuotaIVA.objects.filter(id=int(val)).first()
-                if alicuota_obj:
-                    self.data = self.data.copy()
-                    self.data['alicuota_iva'] = str(alicuota_obj.porcentaje)
+
+        # Si estamos editando, mostrar stock actual informativo sin permitir alteración directa
+        if self.instance and self.instance.pk:
+            self.fields['stock_actual_info'] = forms.IntegerField(
+                required=False,
+                initial=self.instance.stock_actual,
+                disabled=True,
+                label="Stock Actual (Kardex)",
+                help_text="Inmutable desde edición comercial. Se gestiona exclusivamente mediante Kardex/Movimientos de Stock.",
+                widget=forms.NumberInput(attrs={'class': 'form-control bg-light', 'readonly': 'readonly'})
+            )
+
+    def clean_codigo(self):
+        codigo = self.cleaned_data.get('codigo', '').strip()
+        if not codigo:
+            raise forms.ValidationError("El código interno es obligatorio.")
+
+        qs = Producto.objects.filter(codigo__iexact=codigo)
+        if self.instance and self.instance.pk:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise forms.ValidationError(f"Ya existe un producto con el código '{codigo}'.")
+
+        return codigo
+
+    def save(self, commit=True):
+        producto = super().save(commit=False)
+        # Garantizar que una edición comercial no salte el Kardex ni modifique stock_actual
+        if self.instance and self.instance.pk:
+            db_obj = Producto.objects.filter(pk=self.instance.pk).values('stock_actual').first()
+            if db_obj:
+                producto.stock_actual = db_obj['stock_actual']
+        elif producto.stock_actual is None:
+            producto.stock_actual = 0
+
+        if commit:
+            producto.save()
+        return producto
+
+
+class ZonaForm(forms.ModelForm):
+    class Meta:
+        model = Zona
+        fields = ['nombre', 'descripcion', 'dia_reparto_defecto', 'activa']
+        widgets = {
+            'nombre': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Ej. Zona Centro / Litoral'}),
+            'descripcion': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Descripción de la cobertura...'}),
+            'dia_reparto_defecto': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Ej. Lunes y Jueves'}),
+            'activa': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+        }
+
+    def clean_nombre(self):
+        nombre = self.cleaned_data.get('nombre', '').strip()
+        if not nombre:
+            raise forms.ValidationError("El nombre de la zona es obligatorio.")
+
+        qs = Zona.objects.filter(nombre__iexact=nombre)
+        if self.instance and self.instance.pk:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise forms.ValidationError(f"Ya existe una zona registrada con el nombre '{nombre}'.")
+
+        return nombre
+
+
+class VendedorForm(forms.ModelForm):
+    zonas = forms.ModelMultipleChoiceField(
+        queryset=Zona.objects.all(),
+        required=False,
+        label="Zonas de Reparto Asignadas",
+        help_text="Seleccione las zonas asignadas operativamente a este vendedor.",
+        widget=forms.CheckboxSelectMultiple(attrs={'class': 'form-check-input'})
+    )
+
+    class Meta:
+        model = Vendedor
+        fields = [
+            'legajo', 'nombre', 'apellido', 'dni', 'telefono',
+            'comision_porcentaje', 'activo', 'usuario'
+        ]
+        widgets = {
+            'legajo': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Ej. VEND-001'}),
+            'nombre': forms.TextInput(attrs={'class': 'form-control'}),
+            'apellido': forms.TextInput(attrs={'class': 'form-control'}),
+            'dni': forms.TextInput(attrs={'class': 'form-control'}),
+            'telefono': forms.TextInput(attrs={'class': 'form-control'}),
+            'comision_porcentaje': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01'}),
+            'activo': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+            'usuario': forms.Select(attrs={'class': 'form-select'}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Limitar la selección de usuarios a roles de vendedor o staff
+        user_qs = Usuario.objects.filter(
+            Q(rol='VENDEDOR') | Q(is_staff=True) | Q(perfil_vendedor__isnull=True)
+        ).distinct()
+        if self.instance and self.instance.pk and self.instance.usuario:
+            user_qs = (user_qs | Usuario.objects.filter(pk=self.instance.usuario_id)).distinct()
+        self.fields['usuario'].queryset = user_qs
+        self.fields['usuario'].required = False
+
+        # Preseleccionar zonas actualmente activas
+        if self.instance and self.instance.pk:
+            self.fields['zonas'].initial = self.instance.zonas.filter(
+                asignaciones_vendedor__activo=True
+            )
+
+    def clean_legajo(self):
+        legajo = self.cleaned_data.get('legajo')
+        if legajo:
+            legajo = legajo.strip()
+            qs = Vendedor.objects.filter(legajo__iexact=legajo)
+            if self.instance and self.instance.pk:
+                qs = qs.exclude(pk=self.instance.pk)
+            if qs.exists():
+                raise forms.ValidationError(f"Ya existe un vendedor con el legajo '{legajo}'.")
+        return legajo or None
+
+    def save(self, commit=True):
+        vendedor = super().save(commit=commit)
+
+        # Sincronizar asignaciones de zona mediante el modelo histórico vigente
+        zonas_seleccionadas = list(self.cleaned_data.get('zonas', []))
+
+        # 1. Asignar o reactivar seleccionadas
+        for z in zonas_seleccionadas:
+            AsignacionZonaVendedor.objects.update_or_create(
+                vendedor=vendedor,
+                zona=z,
+                defaults={'activo': True}
+            )
+
+        # 2. Desactivar las desmarcadas sin borrarlas para preservar histórico
+        AsignacionZonaVendedor.objects.filter(
+            vendedor=vendedor
+        ).exclude(zona__in=zonas_seleccionadas).update(activo=False)
+
+        return vendedor
 
 
 class PrecioProductoForm(forms.ModelForm):
@@ -112,11 +334,10 @@ class PrecioProductoForm(forms.ModelForm):
 
 class ListaPrecioForm(forms.ModelForm):
     class Meta:
-        model = ListaPrecio
+        model = TipoListaPrecio
         fields = ['nombre', 'descripcion', 'activa']
         widgets = {
             'nombre': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Ej. Lista Mayorista'}),
             'descripcion': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Descripción breve...'}),
             'activa': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
         }
-

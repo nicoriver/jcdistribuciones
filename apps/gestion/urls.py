@@ -15,6 +15,18 @@ urlpatterns = [
     path('productos/', views.productos_list_view, name='productos_list'),
     path('productos/nuevo/', views.producto_crear_view, name='producto_crear'),
     path('productos/<int:producto_id>/editar/', views.producto_editar_view, name='producto_editar'),
+    # Zonas de Reparto
+    path('zonas/', views.zonas_list_view, name='zonas_list'),
+    path('zonas/nueva/', views.zona_crear_view, name='zona_crear'),
+    path('zonas/<int:zona_id>/editar/', views.zona_editar_view, name='zona_editar'),
+    path('zonas/<int:zona_id>/toggle/', views.zona_toggle_view, name='zona_toggle'),
+
+    # Vendedores y Asignación de Zonas
+    path('vendedores/', views.vendedores_list_view, name='vendedores_list'),
+    path('vendedores/nuevo/', views.vendedor_crear_view, name='vendedor_crear'),
+    path('vendedores/<int:vendedor_id>/editar/', views.vendedor_editar_view, name='vendedor_editar'),
+    path('vendedores/<int:vendedor_id>/toggle/', views.vendedor_toggle_view, name='vendedor_toggle'),
+
     path('pedidos/', views.pedidos_list_view, name='pedidos_list'),
     path('deposito/', views.deposito_pedidos_view, name='deposito_pedidos'),
     path('listas-precio/', views.listas_precio_list_view, name='listas_precio_list'),

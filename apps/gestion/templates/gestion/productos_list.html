@@ -5,7 +5,7 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
     <div>
-        <h2 class="h3 fw-bold mb-0 text-dark"><i class="bi bi-box-seam me-2"></i>Catálogo de Productos y Precios</h2>
+        <h2 class="h3 fw-bold mb-0 text-dark"><i class="bi bi-box-seam me-2 text-primary"></i>Catálogo de Productos y Precios</h2>
         <p class="text-muted small mb-0">Gestión del catálogo maestro, control de stock y actualización de listas de precio</p>
     </div>
     <a href="{% url 'gestion:producto_crear' %}" class="btn btn-primary fw-bold shadow-sm">
@@ -20,12 +20,12 @@
             <div class="col-md-4">
                 <div class="input-group">
                     <span class="input-group-text bg-white text-muted"><i class="bi bi-search"></i></span>
-                    <input type="text" name="q" value="{{ query }}" class="form-control" placeholder="Buscar por código, código de barras o nombre...">
+                    <input type="text" name="q" value="{{ query }}" class="form-control" placeholder="Buscar por código, barras o nombre...">
                 </div>
             </div>
             <div class="col-md-2">
                 <select name="categoria" class="form-select">
-                    <option value="">-- Todas las Categorías --</option>
+                    <option value="">-- Categorías --</option>
                     {% for cat in categorias %}
                     <option value="{{ cat.id }}" {% if categoria_actual == cat.id %}selected{% endif %}>{{ cat.nombre }}</option>
                     {% endfor %}
@@ -33,7 +33,7 @@
             </div>
             <div class="col-md-2">
                 <select name="marca" class="form-select">
-                    <option value="">-- Todas las Marcas --</option>
+                    <option value="">-- Marcas --</option>
                     {% for m in marcas %}
                     <option value="{{ m.id }}" {% if marca_actual == m.id %}selected{% endif %}>{{ m.nombre }}</option>
                     {% endfor %}
@@ -75,8 +75,8 @@
                     <tr>
                         <td>
                             <span class="fw-bold font-monospace text-dark d-block">{{ producto.codigo }}</span>
-                            {% if producto.codigo_barra %}
-                            <small class="text-muted font-monospace"><i class="bi bi-barcode me-1"></i>{{ producto.codigo_barra }}</small>
+                            {% if producto.codigo_barras %}
+                            <small class="text-muted font-monospace"><i class="bi bi-upc-scan me-1"></i>{{ producto.codigo_barras }}</small>
                             {% endif %}
                         </td>
                         <td>
@@ -90,8 +90,8 @@
                             <small class="text-muted">{{ producto.marca.nombre|default:"Sin marca" }}</small>
                         </td>
                         <td class="text-end fw-bold">
-                            ${{ producto.costo|floatformat:2 }}
-                            <small class="d-block text-muted text-nowrap">IVA: {{ producto.alicuota_iva.porcentaje }}%</small>
+                            ${{ producto.costo_base|floatformat:2 }}
+                            <small class="d-block text-muted text-nowrap">IVA: {{ producto.alicuota_iva }}%</small>
                         </td>
                         <td class="text-center">
                             {% if producto.controla_stock %}
@@ -114,10 +114,10 @@
                             {% endif %}
                         </td>
                         <td>
-                            <div class="d-flex flex-column gap-1" style="min-width: 140px;">
-                                {% for p_lista in producto.precios_lista.all %}
+                            <div class="d-flex flex-column gap-1" style="min-width: 150px;">
+                                {% for p_lista in producto.precios.all %}
                                 <div class="d-flex justify-content-between align-items-center small border-bottom pb-1">
-                                    <span class="text-muted me-2">{{ p_lista.lista.nombre }}:</span>
+                                    <span class="text-muted me-2">{{ p_lista.tipo_lista.nombre }}:</span>
                                     <strong class="text-dark">${{ p_lista.precio_final|floatformat:2 }}</strong>
                                 </div>
                                 {% empty %}
@@ -142,6 +142,32 @@
                 </tbody>
             </table>
         </div>
+
+        {% if page_obj.has_other_pages %}
+        <div class="card-footer bg-white border-0 py-3">
+            <nav aria-label="Paginación de productos">
+                <ul class="pagination pagination-sm justify-content-center mb-0">
+                    {% if page_obj.has_previous %}
+                        <li class="page-item"><a class="page-link" href="?page=1{% if query_string %}&{{ query_string }}{% endif %}">&laquo; Primera</a></li>
+                        <li class="page-item"><a class="page-link" href="?page={{ page_obj.previous_page_number }}{% if query_string %}&{{ query_string }}{% endif %}">Anterior</a></li>
+                    {% else %}
+                        <li class="page-item disabled"><span class="page-link">&laquo; Primera</span></li>
+                        <li class="page-item disabled"><span class="page-link">Anterior</span></li>
+                    {% endif %}
+
+                    <li class="page-item disabled"><span class="page-link">Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }} ({{ page_obj.paginator.count }} registros)</span></li>
+
+                    {% if page_obj.has_next %}
+                        <li class="page-item"><a class="page-link" href="?page={{ page_obj.next_page_number }}{% if query_string %}&{{ query_string }}{% endif %}">Siguiente</a></li>
+                        <li class="page-item"><a class="page-link" href="?page={{ page_obj.paginator.num_pages }}{% if query_string %}&{{ query_string }}{% endif %}">Última &raquo;</a></li>
+                    {% else %}
+                        <li class="page-item disabled"><span class="page-link">Siguiente</span></li>
+                        <li class="page-item disabled"><span class="page-link">Última &raquo;</span></li>
+                    {% endif %}
+                </ul>
+            </nav>
+        </div>
+        {% endif %}
     </div>
 </div>
 {% endblock %}

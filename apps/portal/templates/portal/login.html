@@ -13,8 +13,9 @@
                 <small class="text-muted text-light">Portal Comercial Mayorista</small>
             </div>
             <div class="card-body p-4">
-                <form method="post" action="{% url 'portal:login' %}">
+                <form method="post">
                     {% csrf_token %}
+                    <input type="hidden" name="next" value="{{ next }}">
                     
                     <div class="mb-3">
                         <label for="identificador" class="form-label fw-semibold">

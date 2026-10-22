@@ -10,16 +10,27 @@ from django.http import HttpResponseForbidden, HttpResponseBadRequest
 from django.db import models
 from django.db.models import Q, F, Sum
 from django.utils import timezone
+from django.core.paginator import Paginator
 
-from clientes.models import Cliente, Vendedor
-from geografia.models import Zona
+from clientes.models import Cliente, Vendedor, AsignacionZonaVendedor, CondicionIVA
+from geografia.models import Zona, Localidad, Provincia
 from productos.models import Producto, Presentacion, Categoria, Marca, TipoListaPrecio, ListaPrecio, PrecioProducto
 from pedidos.models import Pedido
 from pedidos.services import PedidoService
 from compras.models import Compra
 from comprobantes.models import Remito
 from comprobantes.services import RemitoService
-from .forms import ClienteForm, ProductoForm, PrecioProductoForm, ListaPrecioForm
+from .forms import (
+    ClienteForm, ProductoForm, PrecioProductoForm, ListaPrecioForm,
+    ZonaForm, VendedorForm
+)
+
+
+def _get_query_string(request):
+    """Auxiliar para preservar filtros en enlaces de paginación."""
+    params = request.GET.copy()
+    params.pop('page', None)
+    return params.urlencode()
 
 
 def role_required(allowed_roles):
@@ -312,16 +323,35 @@ def clientes_list_view(request):
     if estado:
         clientes_qs = clientes_qs.filter(estado=estado)
 
+    paginator = Paginator(clientes_qs.order_by('razon_social'), 25)
+    page_number = request.GET.get('page')
+    page_obj = paginator.get_page(page_number)
+
     context = {
-        'clientes': clientes_qs.order_by('razon_social'),
+        'page_obj': page_obj,
+        'clientes': page_obj,
         'vendedores': Vendedor.objects.filter(activo=True),
         'zonas': Zona.objects.all(),
         'query': q,
         'vendedor_actual': int(vendedor_id) if vendedor_id.isdigit() else None,
         'zona_actual': int(zona_id) if zona_id.isdigit() else None,
         'estado_actual': estado,
+        'query_string': _get_query_string(request),
     }
     return render(request, 'gestion/clientes_list.html', context)
+
+
+def _obtener_dependencias_cliente():
+    faltantes = []
+    if not CondicionIVA.objects.exists():
+        faltantes.append({'nombre': 'Condiciones de IVA', 'url': '/admin/clientes/condicioniva/', 'admin': True})
+    if not TipoListaPrecio.objects.filter(activa=True).exists():
+        faltantes.append({'nombre': 'Listas de Precios', 'url': '/gestion/listas-precio/nueva/', 'admin': False})
+    if not Zona.objects.filter(activa=True).exists():
+        faltantes.append({'nombre': 'Zonas de Reparto', 'url': '/gestion/zonas/nueva/', 'admin': False})
+    if not Localidad.objects.exists():
+        faltantes.append({'nombre': 'Localidades', 'url': '/admin/geografia/localidad/', 'admin': True})
+    return faltantes
 
 
 @role_required(['SUPERVISOR', 'ADMIN', 'FACTURACION'])
@@ -337,6 +367,7 @@ def cliente_crear_view(request):
 
     context = {
         'form': form,
+        'dependencias_faltantes': _obtener_dependencias_cliente(),
         'titulo': 'Registrar Nuevo Cliente'
     }
     return render(request, 'gestion/cliente_form.html', context)
@@ -358,6 +389,7 @@ def cliente_editar_view(request, cliente_id):
     context = {
         'form': form,
         'cliente': cliente,
+        'dependencias_faltantes': _obtener_dependencias_cliente(),
         'titulo': f'Editar Cliente: {cliente.razon_social}'
     }
     return render(request, 'gestion/cliente_form.html', context)
@@ -392,8 +424,13 @@ def productos_list_view(request):
     if stock_bajo == '1':
         productos_qs = productos_qs.filter(controla_stock=True, stock_actual__lte=F('punto_reposicion'))
 
+    paginator = Paginator(productos_qs.order_by('nombre'), 25)
+    page_number = request.GET.get('page')
+    page_obj = paginator.get_page(page_number)
+
     context = {
-        'productos': productos_qs.order_by('nombre'),
+        'page_obj': page_obj,
+        'productos': page_obj,
         'categorias': Categoria.objects.filter(activa=True),
         'marcas': Marca.objects.filter(activa=True),
         'listas_precio': TipoListaPrecio.objects.filter(activa=True),
@@ -401,8 +438,20 @@ def productos_list_view(request):
         'categoria_actual': int(categoria_id) if categoria_id.isdigit() else None,
         'marca_actual': int(marca_id) if marca_id.isdigit() else None,
         'stock_bajo': stock_bajo,
+        'query_string': _get_query_string(request),
     }
     return render(request, 'gestion/productos_list.html', context)
+
+
+def _obtener_dependencias_producto():
+    faltantes = []
+    if not Categoria.objects.filter(activa=True).exists():
+        faltantes.append({'nombre': 'Categorías', 'url': '/admin/productos/categoria/', 'admin': True})
+    if not Marca.objects.filter(activa=True).exists():
+        faltantes.append({'nombre': 'Marcas', 'url': '/admin/productos/marca/', 'admin': True})
+    if not TipoListaPrecio.objects.filter(activa=True).exists():
+        faltantes.append({'nombre': 'Listas de Precios', 'url': '/gestion/listas-precio/nueva/', 'admin': False})
+    return faltantes
 
 
 @role_required(['SUPERVISOR', 'ADMIN', 'FACTURACION'])
@@ -438,6 +487,7 @@ def producto_crear_view(request):
     context = {
         'form': form,
         'listas_activas': listas_activas,
+        'dependencias_faltantes': _obtener_dependencias_producto(),
         'titulo': 'Registrar Nuevo Producto'
     }
     return render(request, 'gestion/producto_form.html', context)
@@ -489,9 +539,206 @@ def producto_editar_view(request, producto_id):
         'form': form,
         'producto': producto,
         'precios_info': precios_info,
+        'dependencias_faltantes': _obtener_dependencias_producto(),
         'titulo': f'Editar Producto: {producto.nombre}'
     }
     return render(request, 'gestion/producto_form.html', context)
+
+
+# ==============================================================================
+# MÓDULO DE ZONAS LOGÍSTICAS
+# ==============================================================================
+
+@role_required(['SUPERVISOR', 'ADMIN', 'FACTURACION'])
+def zonas_list_view(request):
+    zonas_qs = Zona.objects.annotate(
+        total_clientes=models.Count('clientes', distinct=True),
+        total_vendedores=models.Count('vendedores', filter=models.Q(asignaciones_vendedor__activo=True), distinct=True)
+    ).order_by('nombre')
+
+    q = request.GET.get('q', '').strip()
+    estado = request.GET.get('estado', '').strip()
+
+    if q:
+        zonas_qs = zonas_qs.filter(
+            Q(nombre__icontains=q) |
+            Q(descripcion__icontains=q) |
+            Q(dia_reparto_defecto__icontains=q)
+        )
+
+    if estado == 'activa':
+        zonas_qs = zonas_qs.filter(activa=True)
+    elif estado == 'inactiva':
+        zonas_qs = zonas_qs.filter(activa=False)
+
+    paginator = Paginator(zonas_qs, 25)
+    page_number = request.GET.get('page')
+    page_obj = paginator.get_page(page_number)
+
+    context = {
+        'page_obj': page_obj,
+        'zonas': page_obj,
+        'query': q,
+        'estado_actual': estado,
+        'query_string': _get_query_string(request),
+    }
+    return render(request, 'gestion/zonas_list.html', context)
+
+
+@role_required(['SUPERVISOR', 'ADMIN', 'FACTURACION'])
+def zona_crear_view(request):
+    if request.method == 'POST':
+        form = ZonaForm(request.POST)
+        if form.is_valid():
+            zona = form.save()
+            messages.success(request, f"Zona de reparto '{zona.nombre}' creada exitosamente.")
+            return redirect('gestion:zonas_list')
+    else:
+        form = ZonaForm()
+
+    context = {
+        'form': form,
+        'titulo': 'Registrar Nueva Zona de Reparto'
+    }
+    return render(request, 'gestion/zona_form.html', context)
+
+
+@role_required(['SUPERVISOR', 'ADMIN', 'FACTURACION'])
+def zona_editar_view(request, zona_id):
+    zona = get_object_or_404(Zona, id=zona_id)
+
+    if request.method == 'POST':
+        form = ZonaForm(request.POST, instance=zona)
+        if form.is_valid():
+            zona = form.save()
+            messages.success(request, f"Zona de reparto '{zona.nombre}' actualizada correctamente.")
+            return redirect('gestion:zonas_list')
+    else:
+        form = ZonaForm(instance=zona)
+
+    context = {
+        'form': form,
+        'zona': zona,
+        'titulo': f'Editar Zona: {zona.nombre}'
+    }
+    return render(request, 'gestion/zona_form.html', context)
+
+
+@role_required(['SUPERVISOR', 'ADMIN', 'FACTURACION'])
+def zona_toggle_view(request, zona_id):
+    if request.method != 'POST':
+        return HttpResponseBadRequest('Acción no permitida vía GET.')
+
+    zona = get_object_or_404(Zona, id=zona_id)
+    zona.activa = not zona.activa
+    zona.save(update_fields=['activa'])
+    estado_str = "activada" if zona.activa else "desactivada"
+    messages.info(request, f"Zona '{zona.nombre}' {estado_str} exitosamente.")
+    return redirect('gestion:zonas_list')
+
+
+# ==============================================================================
+# MÓDULO DE VENDEDORES Y ASIGNACIÓN DE ZONAS
+# ==============================================================================
+
+@role_required(['SUPERVISOR', 'ADMIN', 'FACTURACION'])
+def vendedores_list_view(request):
+    vendedores_qs = Vendedor.objects.select_related('usuario').prefetch_related(
+        'asignaciones_zona',
+        'asignaciones_zona__zona'
+    ).annotate(
+        total_clientes=models.Count('clientes', distinct=True)
+    ).order_by('apellido', 'nombre')
+
+    q = request.GET.get('q', '').strip()
+    estado = request.GET.get('estado', '').strip()
+    zona_id = request.GET.get('zona', '').strip()
+
+    if q:
+        vendedores_qs = vendedores_qs.filter(
+            Q(nombre__icontains=q) |
+            Q(apellido__icontains=q) |
+            Q(legajo__icontains=q) |
+            Q(dni__icontains=q)
+        )
+
+    if estado == 'activo':
+        vendedores_qs = vendedores_qs.filter(activo=True)
+    elif estado == 'inactivo':
+        vendedores_qs = vendedores_qs.filter(activo=False)
+
+    if zona_id and zona_id.isdigit():
+        vendedores_qs = vendedores_qs.filter(
+            asignaciones_zona__zona_id=int(zona_id),
+            asignaciones_zona__activo=True
+        )
+
+    paginator = Paginator(vendedores_qs, 25)
+    page_number = request.GET.get('page')
+    page_obj = paginator.get_page(page_number)
+
+    context = {
+        'page_obj': page_obj,
+        'vendedores': page_obj,
+        'zonas': Zona.objects.filter(activa=True),
+        'query': q,
+        'estado_actual': estado,
+        'zona_actual': int(zona_id) if zona_id.isdigit() else None,
+        'query_string': _get_query_string(request),
+    }
+    return render(request, 'gestion/vendedores_list.html', context)
+
+
+@role_required(['SUPERVISOR', 'ADMIN', 'FACTURACION'])
+def vendedor_crear_view(request):
+    if request.method == 'POST':
+        form = VendedorForm(request.POST)
+        if form.is_valid():
+            vendedor = form.save()
+            messages.success(request, f"Vendedor '{vendedor.nombre_completo()}' registrado exitosamente.")
+            return redirect('gestion:vendedores_list')
+    else:
+        form = VendedorForm()
+
+    context = {
+        'form': form,
+        'titulo': 'Registrar Nuevo Vendedor'
+    }
+    return render(request, 'gestion/vendedor_form.html', context)
+
+
+@role_required(['SUPERVISOR', 'ADMIN', 'FACTURACION'])
+def vendedor_editar_view(request, vendedor_id):
+    vendedor = get_object_or_404(Vendedor, id=vendedor_id)
+
+    if request.method == 'POST':
+        form = VendedorForm(request.POST, instance=vendedor)
+        if form.is_valid():
+            vendedor = form.save()
+            messages.success(request, f"Vendedor '{vendedor.nombre_completo()}' actualizado correctamente.")
+            return redirect('gestion:vendedores_list')
+    else:
+        form = VendedorForm(instance=vendedor)
+
+    context = {
+        'form': form,
+        'vendedor': vendedor,
+        'titulo': f'Editar Vendedor: {vendedor.nombre_completo()}'
+    }
+    return render(request, 'gestion/vendedor_form.html', context)
+
+
+@role_required(['SUPERVISOR', 'ADMIN', 'FACTURACION'])
+def vendedor_toggle_view(request, vendedor_id):
+    if request.method != 'POST':
+        return HttpResponseBadRequest('Acción no permitida vía GET.')
+
+    vendedor = get_object_or_404(Vendedor, id=vendedor_id)
+    vendedor.activo = not vendedor.activo
+    vendedor.save(update_fields=['activo'])
+    estado_str = "activado" if vendedor.activo else "desactivado"
+    messages.info(request, f"Vendedor '{vendedor.nombre_completo()}' {estado_str} exitosamente.")
+    return redirect('gestion:vendedores_list')
 
 
 # ==============================================================================

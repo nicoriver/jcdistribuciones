@@ -5,7 +5,7 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
     <div>
-        <h2 class="h3 fw-bold mb-0 text-dark"><i class="bi bi-box-seam me-2"></i>{{ titulo }}</h2>
+        <h2 class="h3 fw-bold mb-0 text-dark"><i class="bi bi-box-seam me-2 text-primary"></i>{{ titulo }}</h2>
         <p class="text-muted small mb-0">Complete la información general del producto y configure las condiciones de precio por lista</p>
     </div>
     <a href="{% url 'gestion:productos_list' %}" class="btn btn-outline-secondary">
@@ -13,13 +13,28 @@
     </a>
 </div>
 
+{% if dependencias_faltantes %}
+<div class="alert alert-warning border-0 shadow-sm mb-4">
+    <h6 class="fw-bold"><i class="bi bi-exclamation-triangle me-1"></i> Maestros requeridos para el producto</h6>
+    <p class="small mb-2">Para una correcta categorización y determinación de precios, configure previamente:</p>
+    <div class="d-flex flex-wrap gap-2">
+        {% for dep in dependencias_faltantes %}
+            <a href="{{ dep.url }}" class="btn btn-sm btn-outline-dark bg-white" {% if dep.admin %}target="_blank"{% endif %}>
+                <i class="bi bi-box-arrow-up-right me-1"></i> {{ dep.nombre }} {% if dep.admin %}<small class="badge bg-secondary">Admin</small>{% endif %}
+            </a>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
 <form method="post" class="needs-validation" novalidate>
     {% csrf_token %}
 
     {% if form.non_field_errors %}
     <div class="alert alert-danger shadow-sm mb-4">
+        <h6 class="fw-bold mb-1"><i class="bi bi-x-circle me-1"></i> Errores generales:</h6>
         {% for error in form.non_field_errors %}
-            <p class="mb-0">{{ error }}</p>
+            <p class="mb-0 small">{{ error }}</p>
         {% endfor %}
     </div>
     {% endif %}
@@ -36,48 +51,48 @@
                         <div class="col-md-6">
                             <label class="form-label fw-semibold">Código Interno *</label>
                             {{ form.codigo }}
-                            {% if form.codigo.errors %}<div class="text-danger small">{{ form.codigo.errors.0 }}</div>{% endif %}
+                            {% if form.codigo.errors %}<div class="text-danger small mt-1">{{ form.codigo.errors.0 }}</div>{% endif %}
                         </div>
                         <div class="col-md-6">
                             <label class="form-label fw-semibold">Código de Barras</label>
-                            {{ form.codigo_barra }}
-                            {% if form.codigo_barra.errors %}<div class="text-danger small">{{ form.codigo_barra.errors.0 }}</div>{% endif %}
+                            {{ form.codigo_barras }}
+                            {% if form.codigo_barras.errors %}<div class="text-danger small mt-1">{{ form.codigo_barras.errors.0 }}</div>{% endif %}
                         </div>
 
                         <div class="col-12">
                             <label class="form-label fw-semibold">Nombre del Producto *</label>
                             {{ form.nombre }}
-                            {% if form.nombre.errors %}<div class="text-danger small">{{ form.nombre.errors.0 }}</div>{% endif %}
+                            {% if form.nombre.errors %}<div class="text-danger small mt-1">{{ form.nombre.errors.0 }}</div>{% endif %}
                         </div>
 
                         <div class="col-12">
                             <label class="form-label fw-semibold">Descripción</label>
                             {{ form.descripcion }}
-                            {% if form.descripcion.errors %}<div class="text-danger small">{{ form.descripcion.errors.0 }}</div>{% endif %}
+                            {% if form.descripcion.errors %}<div class="text-danger small mt-1">{{ form.descripcion.errors.0 }}</div>{% endif %}
                         </div>
 
                         <div class="col-md-6">
                             <label class="form-label fw-semibold">Categoría *</label>
                             {{ form.categoria }}
-                            {% if form.categoria.errors %}<div class="text-danger small">{{ form.categoria.errors.0 }}</div>{% endif %}
+                            {% if form.categoria.errors %}<div class="text-danger small mt-1">{{ form.categoria.errors.0 }}</div>{% endif %}
                         </div>
 
                         <div class="col-md-6">
                             <label class="form-label fw-semibold">Marca</label>
                             {{ form.marca }}
-                            {% if form.marca.errors %}<div class="text-danger small">{{ form.marca.errors.0 }}</div>{% endif %}
+                            {% if form.marca.errors %}<div class="text-danger small mt-1">{{ form.marca.errors.0 }}</div>{% endif %}
                         </div>
 
                         <div class="col-md-6">
                             <label class="form-label fw-semibold">Alícuota IVA *</label>
                             {{ form.alicuota_iva }}
-                            {% if form.alicuota_iva.errors %}<div class="text-danger small">{{ form.alicuota_iva.errors.0 }}</div>{% endif %}
+                            {% if form.alicuota_iva.errors %}<div class="text-danger small mt-1">{{ form.alicuota_iva.errors.0 }}</div>{% endif %}
                         </div>
 
                         <div class="col-md-6">
                             <label class="form-label fw-semibold">Costo Base ($) *</label>
-                            {{ form.costo }}
-                            {% if form.costo.errors %}<div class="text-danger small">{{ form.costo.errors.0 }}</div>{% endif %}
+                            {{ form.costo_base }}
+                            {% if form.costo_base.errors %}<div class="text-danger small mt-1">{{ form.costo_base.errors.0 }}</div>{% endif %}
                         </div>
 
                         <div class="col-12"><hr class="my-2 text-muted"></div>
@@ -90,15 +105,20 @@
                         </div>
 
                         <div class="col-md-4">
-                            <label class="form-label fw-semibold">Stock Actual</label>
-                            {{ form.stock_actual }}
-                            {% if form.stock_actual.errors %}<div class="text-danger small">{{ form.stock_actual.errors.0 }}</div>{% endif %}
+                            <label class="form-label fw-semibold">Punto Reposición</label>
+                            {{ form.punto_reposicion }}
+                            {% if form.punto_reposicion.errors %}<div class="text-danger small mt-1">{{ form.punto_reposicion.errors.0 }}</div>{% endif %}
                         </div>
 
                         <div class="col-md-4">
-                            <label class="form-label fw-semibold">Punto Reposición</label>
-                            {{ form.punto_reposicion }}
-                            {% if form.punto_reposicion.errors %}<div class="text-danger small">{{ form.punto_reposicion.errors.0 }}</div>{% endif %}
+                            {% if form.stock_actual_info %}
+                                <label class="form-label fw-semibold">{{ form.stock_actual_info.label }}</label>
+                                {{ form.stock_actual_info }}
+                                <small class="text-muted d-block" style="font-size: 0.75rem;">{{ form.stock_actual_info.help_text }}</small>
+                            {% else %}
+                                <label class="form-label fw-semibold text-muted">Stock Inicial</label>
+                                <input type="text" class="form-control bg-light" value="0 (Ingresos vía Kardex)" readonly disabled>
+                            {% endif %}
                         </div>
 
                         <div class="col-12">
@@ -184,8 +204,8 @@
 {% block extra_js %}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    const inputCosto = document.querySelector('[name="costo"]') || document.getElementById('id_costo');
-    const selectAlicuota = document.querySelector('[name="alicuota_iva"]') || document.getElementById('id_alicuota_iva');
+    const inputCosto = document.querySelector('[name="costo_base"]') || document.querySelector('[name="costo"]');
+    const selectAlicuota = document.querySelector('[name="alicuota_iva"]');
 
     function parseVal(el) {
         if (!el) return 0;
@@ -246,4 +266,3 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 </script>
 {% endblock %}
-

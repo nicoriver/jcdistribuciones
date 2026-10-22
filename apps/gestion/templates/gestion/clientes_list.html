@@ -87,8 +87,8 @@
                             <div>{{ c.zona.nombre|default:"Sin Zona" }}</div>
                             <small class="text-muted">{{ c.get_dia_reparto_display|default:"Sin día fijo" }}</small>
                         </td>
-                        <td class="small">{{ c.vendedor.nombre|default:"Casa Central" }}</td>
-                        <td><span class="badge bg-primary">{{ c.lista_precio_default.nombre|default:"Estándar" }}</span></td>
+                        <td class="small">{{ c.vendedor.nombre_completo|default:c.vendedor.nombre|default:"Casa Central" }}</td>
+                        <td><span class="badge bg-primary">{{ c.tipo_lista_precio.nombre|default:c.lista_precio_default.nombre|default:"Estándar" }}</span></td>
                         <td class="text-center">
                             {% if c.estado == 'ACTIVO' %}
                                 <span class="badge bg-success">Activo</span>
@@ -112,6 +112,32 @@
                 </tbody>
             </table>
         </div>
+
+        {% if page_obj.has_other_pages %}
+        <div class="card-footer bg-white border-0 py-3">
+            <nav aria-label="Paginación de clientes">
+                <ul class="pagination pagination-sm justify-content-center mb-0">
+                    {% if page_obj.has_previous %}
+                        <li class="page-item"><a class="page-link" href="?page=1{% if query_string %}&{{ query_string }}{% endif %}">&laquo; Primera</a></li>
+                        <li class="page-item"><a class="page-link" href="?page={{ page_obj.previous_page_number }}{% if query_string %}&{{ query_string }}{% endif %}">Anterior</a></li>
+                    {% else %}
+                        <li class="page-item disabled"><span class="page-link">&laquo; Primera</span></li>
+                        <li class="page-item disabled"><span class="page-link">Anterior</span></li>
+                    {% endif %}
+
+                    <li class="page-item disabled"><span class="page-link">Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }} ({{ page_obj.paginator.count }} registros)</span></li>
+
+                    {% if page_obj.has_next %}
+                        <li class="page-item"><a class="page-link" href="?page={{ page_obj.next_page_number }}{% if query_string %}&{{ query_string }}{% endif %}">Siguiente</a></li>
+                        <li class="page-item"><a class="page-link" href="?page={{ page_obj.paginator.num_pages }}{% if query_string %}&{{ query_string }}{% endif %}">Última &raquo;</a></li>
+                    {% else %}
+                        <li class="page-item disabled"><span class="page-link">Siguiente</span></li>
+                        <li class="page-item disabled"><span class="page-link">Última &raquo;</span></li>
+                    {% endif %}
+                </ul>
+            </nav>
+        </div>
+        {% endif %}
     </div>
 </div>
 {% endblock %}

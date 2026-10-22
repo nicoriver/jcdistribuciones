@@ -63,7 +63,7 @@
                 <i class="bi bi-speedometer2 me-1"></i> JC Distribuciones | Supervisor
             </a>
 
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#sidebarMenu">
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#sidebarMenu" aria-controls="sidebarMenu" aria-expanded="false" aria-label="Abrir menú de navegación">
                 <span class="navbar-toggler-icon"></span>
             </button>
 
@@ -72,11 +72,11 @@
                     <i class="bi bi-person-badge-fill me-1 text-warning"></i>{{ user.nombre_completo|default:user.username }}
                     <span class="badge bg-warning text-dark ms-1">{{ user.get_rol_display|default:user.rol }}</span>
                 </span>
-                <a href="{% url 'gestion:bandeja_facturacion' %}" class="btn btn-warning btn-sm fw-bold">
-                    <i class="bi bi-receipt-cutoff me-1"></i> Bandeja Facturación
+                <a href="{% url 'gestion:bandeja_facturacion' %}" class="btn btn-warning btn-sm fw-bold d-none d-sm-inline-block">
+                    <i class="bi bi-receipt-cutoff me-1"></i> Facturación
                 </a>
-                <a href="{% url 'gestion:remito_directo' %}" class="btn btn-outline-info btn-sm fw-bold">
-                    <i class="bi bi-lightning-charge-fill me-1"></i> Remito Directo
+                <a href="{% url 'gestion:remito_directo' %}" class="btn btn-outline-info btn-sm fw-bold d-none d-sm-inline-block">
+                    <i class="bi bi-lightning-charge-fill me-1"></i> Remito
                 </a>
                 <a href="{% url 'portal:catalogo' %}" class="btn btn-outline-light btn-sm">
                     <i class="bi bi-shop me-1"></i> Portal
@@ -144,27 +144,27 @@
                     <div class="sidebar-heading mt-3">Entidades Maestras (ABM)</div>
                     <ul class="nav flex-column">
                         <li class="nav-item">
-                            <a class="nav-link" href="{% url 'gestion:clientes_list' %}">
+                            <a class="nav-link {% if request.resolver_match.url_name in 'clientes_list,cliente_crear,cliente_editar' %}active{% endif %}" href="{% url 'gestion:clientes_list' %}">
                                 <i class="bi bi-people-fill me-2"></i> Clientes
                             </a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link" href="/admin/proveedores/proveedor/">
-                                <i class="bi bi-building-fill me-2"></i> Proveedores
+                                <i class="bi bi-building-fill me-2"></i> Proveedores <small class="badge bg-secondary ms-1">Admin</small>
                             </a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link" href="/admin/clientes/vendedor/">
-                                <i class="bi bi-person-Vcard-fill me-2"></i> Vendedores
+                            <a class="nav-link {% if request.resolver_match.url_name in 'vendedores_list,vendedor_crear,vendedor_editar' %}active{% endif %}" href="{% url 'gestion:vendedores_list' %}">
+                                <i class="bi bi-person-badge-fill me-2"></i> Vendedores
                             </a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link" href="/admin/geografia/zona/">
+                            <a class="nav-link {% if request.resolver_match.url_name in 'zonas_list,zona_crear,zona_editar' %}active{% endif %}" href="{% url 'gestion:zonas_list' %}">
                                 <i class="bi bi-geo-alt-fill me-2"></i> Zonas de Reparto
                             </a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link" href="{% url 'gestion:productos_list' %}">
+                            <a class="nav-link {% if request.resolver_match.url_name in 'productos_list,producto_crear,producto_editar' %}active{% endif %}" href="{% url 'gestion:productos_list' %}">
                                 <i class="bi bi-box-seam-fill me-2"></i> Catálogo y Productos
                             </a>
                         </li>

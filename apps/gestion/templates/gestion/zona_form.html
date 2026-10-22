@@ -1,0 +1,74 @@
+{% extends 'gestion/base_gestion.html' %}
+
+{% block title %}{{ titulo }} - Panel de Gestión{% endblock %}
+
+{% block content %}
+<div class="row mb-3 align-items-center">
+    <div class="col-8">
+        <h3 class="fw-bold mb-0 text-dark"><i class="bi bi-geo-alt me-2 text-primary"></i>{{ titulo }}</h3>
+    </div>
+    <div class="col-4 text-end">
+        <a href="{% url 'gestion:zonas_list' %}" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-arrow-left me-1"></i> Volver a Zonas
+        </a>
+    </div>
+</div>
+
+{% if form.non_field_errors %}
+<div class="alert alert-danger shadow-sm mb-4">
+    <h6 class="fw-bold mb-1"><i class="bi bi-x-circle me-1"></i> Errores en el formulario:</h6>
+    {% for error in form.non_field_errors %}
+        <p class="mb-0 small">{{ error }}</p>
+    {% endfor %}
+</div>
+{% endif %}
+
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white py-3 border-0">
+                <h5 class="card-title fw-bold text-dark mb-0">Información de la Zona</h5>
+            </div>
+            <div class="card-body p-4">
+                <form method="post" novalidate>
+                    {% csrf_token %}
+                    <div class="row g-3">
+                        <div class="col-md-12">
+                            <label for="{{ form.nombre.id_for_label }}" class="form-label fw-semibold">Nombre de la Zona *</label>
+                            {{ form.nombre }}
+                            {% if form.nombre.errors %}<div class="text-danger small mt-1">{{ form.nombre.errors.0 }}</div>{% endif %}
+                        </div>
+
+                        <div class="col-md-12">
+                            <label for="{{ form.descripcion.id_for_label }}" class="form-label fw-semibold">Descripción / Alcance Geográfico</label>
+                            {{ form.descripcion }}
+                            {% if form.descripcion.errors %}<div class="text-danger small mt-1">{{ form.descripcion.errors.0 }}</div>{% endif %}
+                        </div>
+
+                        <div class="col-md-12">
+                            <label for="{{ form.dia_reparto_defecto.id_for_label }}" class="form-label fw-semibold">Día Habitual de Reparto</label>
+                            {{ form.dia_reparto_defecto }}
+                            <small class="text-muted">{{ form.dia_reparto_defecto.help_text }}</small>
+                            {% if form.dia_reparto_defecto.errors %}<div class="text-danger small mt-1">{{ form.dia_reparto_defecto.errors.0 }}</div>{% endif %}
+                        </div>
+
+                        <div class="col-12">
+                            <div class="form-check form-switch pt-2">
+                                {{ form.activa }}
+                                <label class="form-check-label fw-semibold" for="{{ form.activa.id_for_label }}">Zona Activa para Distribución</label>
+                            </div>
+                        </div>
+
+                        <div class="col-12 d-flex justify-content-end gap-2 mt-4">
+                            <a href="{% url 'gestion:zonas_list' %}" class="btn btn-outline-secondary">Cancelar</a>
+                            <button type="submit" class="btn btn-primary fw-bold px-4">
+                                <i class="bi bi-check-circle me-1"></i> Guardar Zona
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
