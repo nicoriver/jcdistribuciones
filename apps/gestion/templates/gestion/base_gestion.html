@@ -18,7 +18,47 @@
         .topbar-gestion {
             background-color: #ffffff;
             border-bottom: 1px solid #e2e8f0;
-            height: 56px;
+            min-height: 56px;
+        }
+        .topbar-nav .nav-link {
+            color: #475569;
+            font-weight: 500;
+            font-size: 0.90rem;
+            padding: 0.45rem 0.75rem;
+            border-radius: 6px;
+            display: inline-flex;
+            align-items: center;
+            transition: all 0.15s ease-in-out;
+        }
+        .topbar-nav .nav-link:hover {
+            color: #0f172a;
+            background-color: #f1f5f9;
+        }
+        .topbar-nav .nav-link.active {
+            color: #2563eb !important;
+            background-color: #eff6ff;
+            font-weight: 600;
+        }
+        .topbar-nav .dropdown-menu {
+            border: 1px solid #e2e8f0;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+            border-radius: 8px;
+            padding: 0.5rem 0;
+        }
+        .topbar-nav .dropdown-item {
+            font-size: 0.88rem;
+            padding: 0.5rem 1rem;
+            color: #334155;
+            display: flex;
+            align-items: center;
+        }
+        .topbar-nav .dropdown-item:hover {
+            background-color: #f1f5f9;
+            color: #2563eb;
+        }
+        .topbar-nav .dropdown-item.active, .topbar-nav .dropdown-item:active {
+            background-color: #2563eb;
+            color: #ffffff;
         }
         .sidebar-gestion {
             background-color: #1e2430;
@@ -98,18 +138,104 @@
 <body>
 
     <!-- TOPBAR CLARA -->
-    <nav class="navbar navbar-expand-md topbar-gestion sticky-top shadow-sm py-0">
+    <nav class="navbar navbar-expand-lg topbar-gestion sticky-top shadow-sm py-1">
         <div class="container-fluid px-3">
             <!-- Brand -->
-            <a class="navbar-brand text-dark fw-bold d-flex align-items-center py-2" href="{% url 'gestion:dashboard' %}">
+            <a class="navbar-brand text-dark fw-bold d-flex align-items-center me-2 me-xl-3" href="{% url 'gestion:dashboard' %}">
                 <i class="bi bi-box-seam text-primary me-2 fs-5"></i>
-                <span class="fs-6">JC Distribuciones</span>
+                <span class="fs-6 text-nowrap">JC Distribuciones</span>
             </a>
 
-            <!-- Mobile toggler -->
-            <button class="navbar-toggler border-0 p-1 text-dark" type="button" data-bs-toggle="collapse" data-bs-target="#sidebarMenu" aria-controls="sidebarMenu" aria-expanded="false" aria-label="Abrir menú de navegación">
-                <i class="bi bi-list fs-3"></i>
+            <!-- Botón móvil para menú lateral -->
+            <button class="btn btn-sm btn-light border d-md-none me-1" type="button" data-bs-toggle="collapse" data-bs-target="#sidebarMenu" aria-controls="sidebarMenu" aria-expanded="false" aria-label="Menú lateral">
+                <i class="bi bi-layout-sidebar"></i>
             </button>
+
+            <!-- Botón móvil para menú superior -->
+            <button class="navbar-toggler border-0 p-1 text-dark d-lg-none me-auto" type="button" data-bs-toggle="collapse" data-bs-target="#topbarNavCollapse" aria-controls="topbarNavCollapse" aria-expanded="false" aria-label="Navegación superior">
+                <i class="bi bi-list fs-4"></i>
+            </button>
+
+            <!-- MENÚ SUPERIOR (Ventas | Productos | Clientes | Informes) -->
+            <div class="collapse navbar-collapse topbar-nav my-2 my-lg-0" id="topbarNavCollapse">
+                <ul class="navbar-nav me-auto mb-2 mb-lg-0 gap-lg-1">
+                    <!-- 1. VENTAS (Submenú desplegable) -->
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle {% if request.resolver_match.url_name in 'pedidos_list,bandeja_facturacion,remito_directo' or request.resolver_match.app_name == 'comprobantes' %}active{% endif %}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                            <i class="bi bi-cart me-1"></i> Ventas
+                        </a>
+                        <ul class="dropdown-menu">
+                            <li>
+                                <a class="dropdown-item {% if request.resolver_match.url_name == 'pedidos_list' %}active{% endif %}" href="{% url 'gestion:pedidos_list' %}">
+                                    <i class="bi bi-bag-check me-2"></i> Pedidos
+                                </a>
+                            </li>
+                            <li>
+                                <a class="dropdown-item {% if request.resolver_match.url_name == 'bandeja_facturacion' %}active{% endif %}" href="{% url 'gestion:bandeja_facturacion' %}">
+                                    <i class="bi bi-receipt-cutoff me-2"></i> Bandeja de Facturación
+                                </a>
+                            </li>
+                            <li>
+                                <a class="dropdown-item {% if request.resolver_match.url_name == 'remito_directo' %}active{% endif %}" href="{% url 'gestion:remito_directo' %}">
+                                    <i class="bi bi-lightning-charge me-2"></i> Remito Directo
+                                </a>
+                            </li>
+                            <li><hr class="dropdown-divider my-1"></li>
+                            <li>
+                                <a class="dropdown-item {% if request.resolver_match.app_name == 'comprobantes' and request.resolver_match.url_name == 'remitos_list' %}active{% endif %}" href="{% url 'comprobantes:remitos_list' %}">
+                                    <i class="bi bi-file-earmark-text me-2"></i> Historial de Remitos
+                                </a>
+                            </li>
+                        </ul>
+                    </li>
+
+                    <!-- 2. PRODUCTOS (Acceso directo a Catálogo) -->
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.resolver_match.url_name in 'productos_list,producto_crear,producto_editar' %}active{% endif %}" href="{% url 'gestion:productos_list' %}">
+                            <i class="bi bi-box-seam me-1"></i> Productos
+                        </a>
+                    </li>
+
+                    <!-- 3. CLIENTES (Acceso directo a Padrón) -->
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.resolver_match.url_name in 'clientes_list,cliente_crear,cliente_editar' %}active{% endif %}" href="{% url 'gestion:clientes_list' %}">
+                            <i class="bi bi-people me-1"></i> Clientes
+                        </a>
+                    </li>
+
+                    <!-- 4. INFORMES (Submenú desplegable) -->
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle {% if request.resolver_match.app_name == 'reportes' %}active{% endif %}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                            <i class="bi bi-graph-up me-1"></i> Informes
+                        </a>
+                        <ul class="dropdown-menu">
+                            <li>
+                                <a class="dropdown-item {% if request.resolver_match.url_name == 'hoja_ruta' %}active{% endif %}" href="{% url 'reportes:hoja_ruta' %}">
+                                    <i class="bi bi-truck me-2"></i> Hoja de Ruta (Reparto)
+                                </a>
+                            </li>
+                            <li>
+                                <a class="dropdown-item {% if request.resolver_match.url_name == 'ventas_vendedores' %}active{% endif %}" href="{% url 'reportes:ventas_vendedores' %}">
+                                    <i class="bi bi-person-lines-fill me-2"></i> Ventas por Vendedor
+                                </a>
+                            </li>
+                            {% if request.user.is_staff or request.user.is_superuser or request.user.rol == 'ADMIN' %}
+                            <li><hr class="dropdown-divider my-1"></li>
+                            <li>
+                                <a class="dropdown-item" href="/admin/stock/movimientostock/">
+                                    <i class="bi bi-boxes me-2"></i> Kardex de Stock
+                                </a>
+                            </li>
+                            <li>
+                                <a class="dropdown-item" href="/admin/compras/compra/">
+                                    <i class="bi bi-journal-check me-2"></i> Historial de Compras
+                                </a>
+                            </li>
+                            {% endif %}
+                        </ul>
+                    </li>
+                </ul>
+            </div>
 
             <!-- Acciones y Usuario -->
             <div class="d-flex align-items-center ms-auto gap-2">
@@ -121,13 +247,24 @@
                 <div class="dropdown">
                     <button class="btn btn-sm btn-light border dropdown-toggle d-flex align-items-center gap-2" type="button" data-bs-toggle="dropdown" aria-expanded="false">
                         <i class="bi bi-person-circle text-secondary"></i>
-                        <span class="d-none d-md-inline fw-semibold text-dark">{{ user.nombre_completo|default:user.username }}</span>
-                        <span class="badge bg-light text-secondary border d-none d-lg-inline">{{ user.get_rol_display|default:user.rol }}</span>
+                        <span class="d-none d-md-inline fw-semibold text-dark">
+                            {% if user.nombre_completo %}{{ user.nombre_completo }}{% elif user.get_full_name %}{{ user.get_full_name }}{% else %}{{ user.username }}{% endif %}
+                        </span>
+                        <span class="badge bg-light text-secondary border d-none d-lg-inline">
+                            {% if user.get_rol_display %}{{ user.get_rol_display }}{% else %}{{ user.rol }}{% endif %}
+                        </span>
                     </button>
                     <ul class="dropdown-menu dropdown-menu-end shadow-sm">
                         <li class="px-3 py-2 border-bottom">
-                            <div class="fw-bold text-dark small">{{ user.nombre_completo|default:user.username }}</div>
-                            <div class="text-muted small">{{ user.email|default:user.username }} &bull; <span class="badge bg-secondary-subtle text-dark border">{{ user.get_rol_display|default:user.rol }}</span></div>
+                            <div class="fw-bold text-dark small">
+                                {% if user.nombre_completo %}{{ user.nombre_completo }}{% elif user.get_full_name %}{{ user.get_full_name }}{% else %}{{ user.username }}{% endif %}
+                            </div>
+                            <div class="text-muted small">
+                                {{ user.email|default:user.username }} &bull;
+                                <span class="badge bg-secondary-subtle text-dark border">
+                                    {% if user.get_rol_display %}{{ user.get_rol_display }}{% else %}{{ user.rol }}{% endif %}
+                                </span>
+                            </div>
                         </li>
                         <li>
                             <a class="dropdown-item py-2" href="{% url 'portal:catalogo' %}">

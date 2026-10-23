@@ -1,15 +1,15 @@
 {% extends "gestion/base_gestion.html" %}
 
-{% block title %}Gestión de Clientes - JC Gestor{% endblock %}
+{% block title %}Gestión de Clientes - JC Distribuciones{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3">
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
     <div>
-        <h3 class="fw-bold mb-0 text-dark"><i class="bi bi-people-fill me-2 text-primary"></i>Cartera y Padrón de Clientes</h3>
+        <h3 class="fw-bold mb-0 text-dark"><i class="bi bi-people me-2 text-primary"></i>Cartera y Padrón de Clientes</h3>
         <p class="text-muted small mb-0">Administración de clientes, vendedores asignados, zonas y listas de precios.</p>
     </div>
-    <a href="{% url 'gestion:cliente_crear' %}" class="btn btn-primary fw-bold">
-        <i class="bi bi-person-plus-fill me-1"></i> + Registrar Cliente
+    <a href="{% url 'gestion:cliente_crear' %}" class="btn btn-primary fw-bold shadow-sm">
+        <i class="bi bi-person-plus-fill me-1"></i> Registrar Cliente
     </a>
 </div>
 
@@ -25,8 +25,9 @@
                 <label for="vendedor" class="form-label small fw-bold">Vendedor:</label>
                 <select name="vendedor" id="vendedor" class="form-select form-select-sm">
                     <option value="">-- Todos los Vendedores --</option>
+                    <option value="sin_vendedor" {% if vendedor_actual == 'sin_vendedor' %}selected{% endif %}>Sin vendedor asignado</option>
                     {% for v in vendedores %}
-                        <option value="{{ v.id }}" {% if vendedor_actual == v.id %}selected{% endif %}>{{ v.nombre }} {{ v.apellido }}</option>
+                        <option value="{{ v.id }}" {% if vendedor_actual == v.id %}selected{% endif %}>{{ v.nombre_completo }}</option>
                     {% endfor %}
                 </select>
             </div>
@@ -34,6 +35,7 @@
                 <label for="zona" class="form-label small fw-bold">Zona:</label>
                 <select name="zona" id="zona" class="form-select form-select-sm">
                     <option value="">-- Todas las Zonas --</option>
+                    <option value="sin_zona" {% if zona_actual == 'sin_zona' %}selected{% endif %}>Sin zona asignada</option>
                     {% for z in zonas %}
                         <option value="{{ z.id }}" {% if zona_actual == z.id %}selected{% endif %}>{{ z.nombre }}</option>
                     {% endfor %}
@@ -48,10 +50,11 @@
                     <option value="INACTIVO" {% if estado_actual == 'INACTIVO' %}selected{% endif %}>Inactivos</option>
                 </select>
             </div>
-            <div class="col-6 col-sm-3 col-md-1 d-grid">
-                <button type="submit" class="btn btn-primary btn-sm fw-bold">
+            <div class="col-6 col-sm-3 col-md-1 d-flex gap-1">
+                <button type="submit" class="btn btn-primary btn-sm fw-bold w-100" title="Filtrar">
                     <i class="bi bi-search"></i>
                 </button>
+                <a href="{% url 'gestion:clientes_list' %}" class="btn btn-outline-secondary btn-sm" title="Limpiar"><i class="bi bi-x-circle"></i></a>
             </div>
         </form>
     </div>
@@ -79,34 +82,71 @@
                     <tr>
                         <td>
                             <div class="fw-bold text-dark">{{ c.razon_social }}</div>
-                            {% if c.nombre_fantasia %}<small class="text-muted">"{{ c.nombre_fantasia }}"</small>{% endif %}
+                            {% if c.nombre_fantasia %}<small class="text-muted d-block">"{{ c.nombre_fantasia }}"</small>{% endif %}
+                            {% if c.domicilio or c.localidad %}
+                                <small class="text-muted d-block">
+                                    <i class="bi bi-geo-alt me-1"></i>
+                                    {% if c.domicilio %}{{ c.domicilio }}{% endif %}
+                                    {% if c.domicilio and c.localidad %} &bull; {% endif %}
+                                    {% if c.localidad %}{{ c.localidad.nombre }}{% if c.localidad.provincia %}, {{ c.localidad.provincia.nombre }}{% endif %}{% endif %}
+                                </small>
+                            {% endif %}
                         </td>
-                        <td class="font-monospace small fw-bold">{{ c.cuit }}</td>
-                        <td><span class="badge bg-secondary">{{ c.condicion_iva.codigo|default:"Sin IVA" }}</span></td>
+                        <td class="font-monospace small fw-bold text-muted">{{ c.cuit }}</td>
                         <td>
-                            <div>{{ c.zona.nombre|default:"Sin Zona" }}</div>
-                            <small class="text-muted">{{ c.get_dia_reparto_display|default:"Sin día fijo" }}</small>
+                            {% if c.condicion_iva %}
+                                <span class="badge bg-secondary-subtle text-dark border">{{ c.condicion_iva.codigo }}</span>
+                            {% else %}
+                                <span class="badge bg-light text-muted border">Sin IVA</span>
+                            {% endif %}
                         </td>
-                        <td class="small">{{ c.vendedor.nombre_completo|default:c.vendedor.nombre|default:"Casa Central" }}</td>
-                        <td><span class="badge bg-primary">{{ c.tipo_lista_precio.nombre|default:c.lista_precio_default.nombre|default:"Estándar" }}</span></td>
+                        <td>
+                            {% if c.zona %}
+                                <div class="fw-semibold text-dark">{{ c.zona.nombre }}</div>
+                            {% else %}
+                                <div class="text-muted small">Sin zona asignada</div>
+                            {% endif %}
+                            {% if c.dia_reparto %}
+                                <small class="text-muted">{{ c.get_dia_reparto_display }}</small>
+                            {% else %}
+                                <small class="text-muted">Sin día fijo</small>
+                            {% endif %}
+                        </td>
+                        <td class="small">
+                            {% if c.vendedor %}
+                                <span class="text-dark fw-semibold">{{ c.vendedor.nombre_completo }}</span>
+                            {% else %}
+                                <span class="text-muted fst-italic">Sin vendedor asignado</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if c.tipo_lista_precio %}
+                                <span class="badge bg-primary-subtle text-primary border border-primary-subtle">{{ c.tipo_lista_precio.nombre }}</span>
+                            {% else %}
+                                <span class="badge bg-light text-muted border">Sin lista asignada</span>
+                            {% endif %}
+                        </td>
                         <td class="text-center">
                             {% if c.estado == 'ACTIVO' %}
-                                <span class="badge bg-success">Activo</span>
+                                <span class="badge bg-success-subtle text-success border border-success-subtle">Activo</span>
                             {% elif c.estado == 'PENDIENTE' %}
-                                <span class="badge bg-warning text-dark">Pendiente</span>
+                                <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle">Pendiente</span>
                             {% else %}
-                                <span class="badge bg-danger">Inactivo</span>
+                                <span class="badge bg-secondary-subtle text-secondary border">Inactivo</span>
                             {% endif %}
                         </td>
                         <td class="text-center">
                             <a href="{% url 'gestion:cliente_editar' c.id %}" class="btn btn-outline-primary btn-sm" title="Editar Cliente">
-                                <i class="bi bi-pencil-fill"></i> Editar
+                                <i class="bi bi-pencil me-1"></i> Editar
                             </a>
                         </td>
                     </tr>
                     {% empty %}
                     <tr>
-                        <td colspan="8" class="text-center py-4 text-muted">No se encontraron clientes registrados.</td>
+                        <td colspan="8" class="text-center py-5 text-muted">
+                            <i class="bi bi-people display-4 d-block mb-3 text-secondary"></i>
+                            <p class="fs-5 mb-0">No se encontraron clientes registrados.</p>
+                        </td>
                     </tr>
                     {% endfor %}
                 </tbody>

@@ -315,10 +315,14 @@ def clientes_list_view(request):
             Q(domicilio__icontains=q)
         )
 
-    if vendedor_id and vendedor_id.isdigit():
+    if vendedor_id == 'sin_vendedor':
+        clientes_qs = clientes_qs.filter(vendedor__isnull=True)
+    elif vendedor_id and vendedor_id.isdigit():
         clientes_qs = clientes_qs.filter(vendedor_id=int(vendedor_id))
 
-    if zona_id and zona_id.isdigit():
+    if zona_id == 'sin_zona':
+        clientes_qs = clientes_qs.filter(zona__isnull=True)
+    elif zona_id and zona_id.isdigit():
         clientes_qs = clientes_qs.filter(zona_id=int(zona_id))
 
     if estado:
@@ -334,8 +338,8 @@ def clientes_list_view(request):
         'vendedores': Vendedor.objects.filter(activo=True),
         'zonas': Zona.objects.all(),
         'query': q,
-        'vendedor_actual': int(vendedor_id) if vendedor_id.isdigit() else None,
-        'zona_actual': int(zona_id) if zona_id.isdigit() else None,
+        'vendedor_actual': int(vendedor_id) if vendedor_id.isdigit() else (vendedor_id if vendedor_id == 'sin_vendedor' else None),
+        'zona_actual': int(zona_id) if zona_id.isdigit() else (zona_id if zona_id == 'sin_zona' else None),
         'estado_actual': estado,
         'query_string': _get_query_string(request),
     }
