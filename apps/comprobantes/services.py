@@ -27,6 +27,8 @@ class RemitoService:
         pedido_origen_id=None,
         pedido=None,
         observaciones="",
+        fecha=None,
+        tipo_lista_precio=None,
         **kwargs
     ):
         """
@@ -50,16 +52,43 @@ class RemitoService:
         if not cliente:
             raise ValidationError("Debe especificar un cliente válido para emitir el remito.")
 
-        if vendedor is None:
-            vendedor = getattr(cliente, 'vendedor', None)
+        # Vendedor: obtenido del cliente obligatoriamente para garantizar integridad
+        vendedor = getattr(cliente, 'vendedor', None)
         if not vendedor:
-            raise ValidationError("El remito requiere un vendedor asignado.")
+            raise ValidationError(
+                f"El cliente '{cliente.razon_social}' no tiene un vendedor asignado. "
+                "Debe asignarle un vendedor para poder emitir el remito."
+            )
 
         if not supervisor:
             raise ValidationError("El remito requiere el usuario supervisor/operador que lo emite.")
 
         if not items:
             raise ValidationError("El remito debe contener al menos un ítem.")
+
+        # Normalizar fecha comercial
+        fecha_val = fecha or kwargs.get('fecha_comercial')
+        if isinstance(fecha_val, str) and fecha_val.strip():
+            from datetime import date
+            try:
+                fecha_val = date.fromisoformat(fecha_val.strip())
+            except ValueError:
+                raise ValidationError(f"Formato de fecha comercial inválido: '{fecha_val}'.")
+        elif hasattr(fecha_val, 'date') and not hasattr(fecha_val, 'year'):
+            pass
+        elif hasattr(fecha_val, 'date'):
+            fecha_val = fecha_val.date()
+
+        if not fecha_val and pedido and getattr(pedido, 'fecha_creacion', None):
+            fecha_val = pedido.fecha_creacion.date()
+
+        # Normalizar tipo de lista de precios
+        if not tipo_lista_precio:
+            tipo_lista_precio = kwargs.get('tipo_lista') or kwargs.get('lista_precio')
+            if not tipo_lista_precio and pedido and getattr(pedido, 'tipo_lista_precio', None):
+                tipo_lista_precio = pedido.tipo_lista_precio
+            elif not tipo_lista_precio and getattr(cliente, 'tipo_lista_precio', None):
+                tipo_lista_precio = cliente.tipo_lista_precio
 
         pv = int(punto_venta or 1)
 
@@ -88,6 +117,8 @@ class RemitoService:
             supervisor=supervisor,
             pedido=pedido,
             pedido_origen_id=pedido_origen_id,
+            fecha=fecha_val,
+            tipo_lista_precio=tipo_lista_precio,
             subtotal_bruto=Decimal('0.00'),
             total_descuento=Decimal('0.00'),
             monto_total=Decimal('0.00'),
@@ -121,12 +152,19 @@ class RemitoService:
 
             cant_raw = item_info.get('cantidad', 0)
             try:
-                cantidad = int(Decimal(str(cant_raw)))
+                cant_dec = Decimal(str(cant_raw))
             except Exception:
                 raise ValidationError(f"Cantidad inválida en renglón #{idx}: '{cant_raw}'.")
 
-            if cantidad <= 0:
+            if cant_dec <= Decimal('0'):
                 raise ValidationError(f"La cantidad del producto '{producto_obj.nombre}' debe ser mayor a 0.")
+
+            if cant_dec % Decimal('1') != Decimal('0'):
+                raise ValidationError(
+                    f"La cantidad del producto '{producto_obj.nombre}' debe ser un número entero (se ingresó '{cant_raw}'). "
+                    "No se permiten cantidades fraccionarias."
+                )
+            cantidad = int(cant_dec)
 
             # Factor de unidades base
             if 'factor_unidades' in item_info and item_info['factor_unidades'] is not None:
@@ -139,27 +177,29 @@ class RemitoService:
             if factor_unidades <= 0:
                 factor_unidades = 1
 
-            # Precio unitario histórico (congelado)
+            # Resolución y congelamiento estricto del precio unitario
             precio_raw = item_info.get('precio_unitario_historico', item_info.get('precio_unitario'))
+
             if precio_raw is not None:
                 precio_unitario_historico = Decimal(str(precio_raw)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
             else:
-                # Obtener desde la lista de precios del cliente
-                lista_cli = getattr(cliente, 'tipo_lista_precio', None)
-                precio_lista = None
-                if lista_cli:
-                    precio_lista = PrecioProducto.objects.filter(
-                        producto=producto_obj,
-                        tipo_lista=lista_cli
-                    ).first()
+                if not tipo_lista_precio:
+                    raise ValidationError(
+                        f"No se pudo resolver el precio del producto '{producto_obj.nombre}' [{producto_obj.codigo}]. "
+                        "Debe especificar una lista de precios válida."
+                    )
+
+                precio_lista = PrecioProducto.objects.filter(
+                    producto=producto_obj,
+                    tipo_lista=tipo_lista_precio
+                ).first()
                 if not precio_lista:
-                    precio_lista = producto_obj.precios.first()
+                    raise ValidationError(
+                        f"El producto '{producto_obj.nombre}' [{producto_obj.codigo}] no tiene precio definido "
+                        f"en la lista '{tipo_lista_precio.nombre}'."
+                    )
 
-                if precio_lista:
-                    precio_base = precio_lista.precio_final
-                else:
-                    precio_base = producto_obj.costo_base
-
+                precio_base = precio_lista.precio_final
                 precio_unitario_historico = (precio_base * Decimal(factor_unidades)).quantize(
                     Decimal('0.01'), rounding=ROUND_HALF_UP
                 )
@@ -402,7 +442,18 @@ class RemitoService:
 
     @classmethod
     @transaction.atomic
-    def emitir_remito_directo(cls, cliente, vendedor, items_data, observaciones="", usuario_emisor=None, punto_venta=1):
+    def emitir_remito_directo(
+        cls,
+        cliente,
+        vendedor=None,
+        items_data=None,
+        observaciones="",
+        usuario_emisor=None,
+        punto_venta=1,
+        fecha=None,
+        tipo_lista_precio=None,
+        **kwargs
+    ):
         """
         Emite un Remito A4 directo (venta mostrador / sin pedido previo).
         """
@@ -412,7 +463,10 @@ class RemitoService:
             supervisor=usuario_emisor,
             items=items_data,
             punto_venta=punto_venta,
-            observaciones=observaciones
+            observaciones=observaciones,
+            fecha=fecha,
+            tipo_lista_precio=tipo_lista_precio,
+            **kwargs
         )
 
 

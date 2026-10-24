@@ -9,7 +9,7 @@
             <i class="bi bi-lightning-charge-fill me-2 text-primary"></i>Emisión de Remito Directo (Mostrador)
         </h3>
         <p class="text-muted small mb-0">
-            Genera un Remito A4 comercial en el acto sin pedido previo y descuenta las unidades físicas del stock.
+            Genera un Remito A4 comercial en el acto sin pedido previo y descuenta las existencias físicas del stock.
         </p>
     </div>
     <a href="{% url 'gestion:bandeja_facturacion' %}" class="btn btn-outline-secondary btn-sm">
@@ -17,138 +17,820 @@
     </a>
 </div>
 
+{% if messages %}
+<div class="mb-3">
+    {% for message in messages %}
+    <div class="alert alert-{{ message.tags|default:'info' }} alert-dismissible fade show shadow-sm" role="alert">
+        {{ message }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Cerrar"></button>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+
 <form method="post" action="{% url 'gestion:remito_directo' %}" id="formRemitoDirecto">
     {% csrf_token %}
+    
+    <!-- 1. CABECERA COMERCIAL -->
     <div class="card border-0 shadow-sm mb-4">
         <div class="card-header bg-white py-3">
-            <h6 class="mb-0 fw-bold"><i class="bi bi-person-vcard me-2 text-primary"></i>1. Datos del Cliente y Vendedor</h6>
+            <h6 class="mb-0 fw-bold"><i class="bi bi-person-vcard me-2 text-primary"></i>1. Cabecera Comercial y Cliente</h6>
         </div>
         <div class="card-body">
             <div class="row g-3">
-                <div class="col-12 col-md-5">
+                <!-- Cliente -->
+                <div class="col-12 col-md-4">
                     <label class="form-label small fw-bold">Cliente *</label>
-                    <select name="cliente_id" class="form-select" required>
+                    <select name="cliente_id" id="selectCliente" class="form-select" required>
                         <option value="">-- Seleccione un Cliente --</option>
                         {% for c in clientes %}
-                        <option value="{{ c.id }}">
-                            {{ c.razon_social }} (CUIT: {{ c.cuit }}) - Lista: {{ c.tipo_lista_precio.nombre|default:"General" }}
+                        <option value="{{ c.id }}"
+                                data-vendedor-nombre="{{ c.vendedor.nombre_completo|default:'' }}"
+                                data-vendedor-id="{{ c.vendedor.id|default:'' }}"
+                                data-edit-url="{% url 'gestion:cliente_editar' c.id %}"
+                                data-lista-id="{{ c.tipo_lista_precio_id|default:'' }}"
+                                {% if selected_cliente_id == c.id %}selected{% endif %}>
+                            {{ c.razon_social }} (CUIT: {{ c.cuit }})
                         </option>
                         {% endfor %}
                     </select>
                 </div>
-                <div class="col-12 col-md-4">
-                    <label class="form-label small fw-bold">Vendedor Responsable (Opcional)</label>
-                    <select name="vendedor_id" class="form-select">
-                        <option value="">-- Usar Vendedor Asignado al Cliente --</option>
-                        {% for v in vendedores %}
-                        <option value="{{ v.id }}">{{ v.nombre_completo }} (Legajo: {{ v.legajo }})</option>
+
+                <!-- Vendedor (Solo Lectura) -->
+                <div class="col-12 col-md-3">
+                    <label class="form-label small fw-bold">Vendedor Responsable</label>
+                    <div id="vendedorContainer" class="p-2 border rounded bg-light" style="min-height: 38px;">
+                        <div id="vendedorTexto" class="small fw-semibold text-secondary">
+                            <i class="bi bi-person me-1"></i> Seleccione un cliente
+                        </div>
+                        <div id="vendedorAlerta" class="d-none text-danger small mt-1">
+                            <i class="bi bi-exclamation-triangle-fill me-1"></i> Sin vendedor asignado.
+                            <a href="#" id="linkEditarCliente" target="_blank" class="badge bg-danger text-white text-decoration-none ms-1">Asignar</a>
+                        </div>
+                    </div>
+                    <small class="text-muted d-block" style="font-size: 0.72rem;">Resuelto automáticamente desde la ficha del cliente.</small>
+                </div>
+
+                <!-- Lista de Precios -->
+                <div class="col-12 col-md-3">
+                    <label class="form-label small fw-bold">Lista de Precios *</label>
+                    <select name="tipo_lista_precio_id" id="selectListaPrecio" class="form-select" required>
+                        {% if not default_lista %}
+                        <option value="">-- Seleccione Lista de Precios --</option>
+                        {% endif %}
+                        {% for lp in listas_precio %}
+                        <option value="{{ lp.id }}" {% if selected_lista_id == lp.id %}selected{% endif %}>
+                            {{ lp.nombre }}
+                        </option>
                         {% endfor %}
                     </select>
+                    <small class="text-muted d-block" style="font-size: 0.72rem;">Minorista seleccionada por defecto.</small>
                 </div>
-                <div class="col-12 col-md-3">
+
+                <!-- Fecha Comercial -->
+                <div class="col-12 col-md-2">
+                    <label class="form-label small fw-bold">Fecha Comercial *</label>
+                    <input type="date" name="fecha" id="inputFecha" class="form-control" value="{{ fecha_seleccionada }}" required>
+                </div>
+
+                <!-- Observaciones -->
+                <div class="col-12">
                     <label class="form-label small fw-bold">Observaciones de Entrega</label>
-                    <input type="text" name="observaciones" class="form-control" placeholder="Ej: Retira por mostrador">
+                    <input type="text" name="observaciones" class="form-control" placeholder="Ej: Retira por mostrador / Pago contado" value="{{ observaciones }}">
                 </div>
             </div>
         </div>
     </div>
 
+    <!-- 2. GRILLA DE CARGA RÁPIDA POR TECLADO -->
     <div class="card border-0 shadow-sm mb-4">
         <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
-            <h6 class="mb-0 fw-bold"><i class="bi bi-box-seam me-2 text-success"></i>2. Renglones del Remito A4</h6>
-            <button type="button" class="btn btn-outline-primary btn-sm fw-bold" id="btnAgregarFila">
-                <i class="bi bi-plus-circle me-1"></i> Agregar Renglón
-            </button>
+            <div>
+                <h6 class="mb-0 fw-bold"><i class="bi bi-box-seam me-2 text-success"></i>2. Renglones del Remito A4</h6>
+                <small class="text-muted">Carga por teclado: Código [Enter] → Cantidad [Enter] → Descuento [Enter] → Total [Enter]</small>
+            </div>
+            <div class="d-flex gap-2">
+                <button type="button" class="btn btn-outline-secondary btn-sm" id="btnAbrirModalBusquedaGlobal">
+                    <i class="bi bi-search me-1"></i> Buscar en Catálogo
+                </button>
+                <button type="button" class="btn btn-outline-primary btn-sm fw-bold" id="btnAgregarFila">
+                    <i class="bi bi-plus-circle me-1"></i> Agregar Renglón (F2)
+                </button>
+            </div>
         </div>
         <div class="card-body p-0">
             <div class="table-responsive">
                 <table class="table table-bordered align-middle mb-0" id="tablaRenglones">
                     <thead class="table-light">
                         <tr>
-                            <th style="width: 38%;">Producto</th>
-                            <th style="width: 22%;">Presentación / Bulto</th>
-                            <th style="width: 12%;">Cantidad</th>
-                            <th style="width: 14%;">Precio Unit. ($)</th>
-                            <th style="width: 10%;">% Desc.</th>
-                            <th style="width: 4%;"></th>
+                            <th style="width: 15%;">Código</th>
+                            <th style="width: 35%;">Descripción y Presentación</th>
+                            <th style="width: 10%;" class="text-center">Cantidad</th>
+                            <th style="width: 13%;" class="text-end">Precio Lista</th>
+                            <th style="width: 10%;" class="text-end">% Desc.</th>
+                            <th style="width: 13%;" class="text-end">Total</th>
+                            <th style="width: 4%;" class="text-center"></th>
                         </tr>
                     </thead>
                     <tbody id="tbodyRenglones">
-                        <tr class="fila-renglon">
-                            <td>
-                                <select name="producto_id[]" class="form-select form-select-sm select-producto" required>
-                                    <option value="">-- Seleccione Producto --</option>
-                                    {% for p in productos %}
-                                    <option value="{{ p.id }}" data-precio="{{ p.costo_base|floatformat:2 }}">
-                                        [{{ p.codigo }}] {{ p.nombre }} (Stock: {{ p.stock_actual }})
-                                    </option>
-                                    {% endfor %}
-                                </select>
-                            </td>
-                            <td>
-                                <select name="presentacion_id[]" class="form-select form-select-sm">
-                                    <option value="">Unidad Base (x1)</option>
-                                    {% for p in productos %}
-                                        {% for pres in p.presentaciones.all %}
-                                        <option value="{{ pres.id }}" data-producto="{{ p.id }}">
-                                            {{ p.codigo }} - {{ pres.nombre }} (x{{ pres.factor_conversion }})
-                                        </option>
-                                        {% endfor %}
-                                    {% endfor %}
-                                </select>
-                            </td>
-                            <td>
-                                <input type="number" name="cantidad[]" class="form-control form-control-sm text-center" value="1" min="1" required>
-                            </td>
-                            <td>
-                                <input type="number" step="0.01" name="precio_unitario[]" class="form-control form-control-sm text-end" placeholder="Auto (Lista)">
-                            </td>
-                            <td>
-                                <input type="number" step="0.01" name="porcentaje_descuento[]" class="form-control form-control-sm text-end" value="0.00" min="0" max="100">
-                            </td>
-                            <td class="text-center">
-                                <button type="button" class="btn btn-sm btn-outline-danger btn-eliminar-fila">
-                                    <i class="bi bi-trash"></i>
-                                </button>
-                            </td>
-                        </tr>
+                        <!-- Las filas se renderizan dinámicamente o se recargan -->
                     </tbody>
                 </table>
             </div>
         </div>
-        <div class="card-footer bg-white py-3 d-flex justify-content-end gap-2">
-            <button type="submit" class="btn btn-success fw-bold px-4">
+
+        <!-- PIE PERMANENTE CON RESUMEN DE TOTALES -->
+        <div class="card-footer bg-light py-3 border-top">
+            <div class="row align-items-center">
+                <div class="col-12 col-md-6 mb-3 mb-md-0">
+                    <div class="d-flex gap-2 mb-1">
+                        <button type="button" class="btn btn-outline-primary btn-sm fw-bold" id="btnAgregarFilaPie">
+                            <i class="bi bi-plus-circle me-1"></i> Agregar Renglón
+                        </button>
+                    </div>
+                    <small class="text-muted d-block">
+                        <i class="bi bi-keyboard me-1"></i><strong>Atajos:</strong> Presione <kbd>Enter</kbd> para recorrer y confirmar los campos. <kbd>F2</kbd> añade una fila nueva.
+                    </small>
+                </div>
+                <div class="col-12 col-md-6">
+                    <div class="d-flex flex-column align-items-end gap-1">
+                        <div class="d-flex justify-content-between w-100" style="max-width: 340px;">
+                            <span class="text-muted fw-semibold">Subtotal Bruto:</span>
+                            <span class="fw-bold text-dark font-monospace" id="resumenSubtotal">$ 0,00</span>
+                        </div>
+                        <div class="d-flex justify-content-between w-100" style="max-width: 340px;">
+                            <span class="text-danger fw-semibold">Descuento (-):</span>
+                            <span class="fw-bold text-danger font-monospace" id="resumenDescuento">$ 0,00</span>
+                        </div>
+                        <div class="d-flex justify-content-between w-100 border-top pt-2 mt-1" style="max-width: 340px;">
+                            <span class="fw-bold fs-6 text-dark">TOTAL GENERAL:</span>
+                            <span class="fw-bold fs-5 text-primary font-monospace" id="resumenTotalGeneral">$ 0,00</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- BOTÓN FINAL DE EMISIÓN -->
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-body py-3 d-flex justify-content-between align-items-center">
+            <div class="text-muted small">
+                <i class="bi bi-shield-check me-1 text-success"></i> La emisión descuenta existencias físicas en el momento y genera la salida en Kardex.
+            </div>
+            <button type="submit" class="btn btn-success fw-bold px-4 py-2" id="btnEmitirRemito">
                 <i class="bi bi-printer-fill me-1"></i> Emitir Remito A4 y Descontar Stock
             </button>
         </div>
     </div>
 </form>
+
+<!-- MODAL BÚSQUEDA ALTERNATIVA POR DESCRIPCIÓN -->
+<div class="modal fade" id="modalBuscarProducto" tabindex="-1" aria-labelledby="modalBuscarProductoLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header bg-light">
+                <h5 class="modal-title fw-bold" id="modalBuscarProductoLabel">
+                    <i class="bi bi-search me-2 text-primary"></i>Buscar Producto en Catálogo
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <div class="input-group">
+                        <span class="input-group-text bg-white"><i class="bi bi-search text-muted"></i></span>
+                        <input type="text" id="inputBuscarModal" class="form-control" placeholder="Buscar por código, nombre, categoría o marca..." autocomplete="off">
+                    </div>
+                    <small class="text-muted mt-1 d-block">Escriba para filtrar en tiempo real. Haga clic en una fila o presione Seleccionar para cargarlo al remito.</small>
+                </div>
+                <div class="table-responsive" style="max-height: 380px;">
+                    <table class="table table-hover table-sm align-middle" id="tablaModalResultados">
+                        <thead class="table-light sticky-top">
+                            <tr>
+                                <th style="width: 15%;">Código</th>
+                                <th style="width: 45%;">Descripción</th>
+                                <th style="width: 15%;">Categoría / Marca</th>
+                                <th style="width: 10%;" class="text-center">Stock</th>
+                                <th style="width: 15%;" class="text-end">Precio Lista</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tbodyModalResultados">
+                            <!-- Inyectado por JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer bg-light py-2">
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cerrar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- DATOS DE CATÁLOGO Y FILAS RECARGADAS EN JSON -->
+<script id="catalogDataJson" type="application/json">
+{{ catalog_data_json|safe }}
+</script>
+{{ filas_recargadas|json_script:"filasRecargadasScript" }}
 {% endblock %}
 
 {% block extra_js %}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    const tbody = document.getElementById('tbodyRenglones');
-    const btnAgregar = document.getElementById('btnAgregarFila');
+    // 1. CARGA DE CATÁLOGO
+    const catalogDataEl = document.getElementById('catalogDataJson');
+    const CATALOG = catalogDataEl ? JSON.parse(catalogDataEl.textContent || '{}') : {};
+    
+    // Diccionario indexado en minúsculas y sin espacios para búsqueda exacta tolerante
+    const catalogByCode = {};
+    const catalogArray = [];
+    Object.keys(CATALOG).forEach(key => {
+        const item = CATALOG[key];
+        catalogByCode[key.trim().toUpperCase()] = item;
+        catalogArray.push(item);
+    });
 
-    btnAgregar.addEventListener('click', function() {
-        const primeraFila = tbody.querySelector('.fila-renglon');
-        const nuevaFila = primeraFila.cloneNode(true);
-        nuevaFila.querySelectorAll('input').forEach(input => {
-            if (input.name === 'cantidad[]') input.value = '1';
-            else if (input.name === 'porcentaje_descuento[]') input.value = '0.00';
-            else input.value = '';
+    const tbody = document.getElementById('tbodyRenglones');
+    const selectCliente = document.getElementById('selectCliente');
+    const selectListaPrecio = document.getElementById('selectListaPrecio');
+    const vendedorTexto = document.getElementById('vendedorTexto');
+    const vendedorAlerta = document.getElementById('vendedorAlerta');
+    const linkEditarCliente = document.getElementById('linkEditarCliente');
+    const formRemito = document.getElementById('formRemitoDirecto');
+    const btnEmitir = document.getElementById('btnEmitirRemito');
+
+    let rowSearchTarget = null; // Fila activa para la búsqueda por modal
+    let previousListId = selectListaPrecio.value;
+
+    // Formateador monetario argentino (ej: $ 1.234,56)
+    function formatMoney(num) {
+        if (num === null || num === undefined || isNaN(num)) return '$ 0,00';
+        return '$ ' + Number(num).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    // 2. ACTUALIZACIÓN DEL VENDEDOR EN BASE AL CLIENTE
+    function actualizarVendedor() {
+        const opt = selectCliente.options[selectCliente.selectedIndex];
+        if (!opt || !opt.value) {
+            vendedorTexto.innerHTML = '<i class="bi bi-person me-1"></i> Seleccione un cliente';
+            vendedorTexto.className = 'small fw-semibold text-secondary';
+            vendedorAlerta.classList.add('d-none');
+            return;
+        }
+
+        const vNombre = opt.dataset.vendedorNombre || '';
+        const editUrl = opt.dataset.editUrl || '#';
+
+        if (vNombre.trim()) {
+            vendedorTexto.innerHTML = `<i class="bi bi-person-check-fill text-success me-1"></i> <span class="text-dark">${vNombre}</span>`;
+            vendedorTexto.className = 'small fw-semibold text-dark';
+            vendedorAlerta.classList.add('d-none');
+        } else {
+            vendedorTexto.innerHTML = '<span class="text-danger fw-bold"><i class="bi bi-exclamation-triangle-fill me-1"></i> Sin vendedor asignado</span>';
+            vendedorAlerta.classList.remove('d-none');
+            linkEditarCliente.href = editUrl;
+        }
+    }
+    selectCliente.addEventListener('change', actualizarVendedor);
+    actualizarVendedor();
+
+    // 3. CAMBIO DE LISTA DE PRECIOS CON CONFIRMACIÓN
+    selectListaPrecio.addEventListener('change', function() {
+        const rowsLoaded = tbody.querySelectorAll('.fila-renglon[data-producto-id]:not([data-producto-id=""])');
+        if (rowsLoaded.length > 0) {
+            const confirmChange = confirm("¿Desea cambiar la lista de precios y recalcular los precios de los renglones cargados? Se conservarán las cantidades y descuentos.");
+            if (!confirmChange) {
+                selectListaPrecio.value = previousListId;
+                return;
+            }
+        }
+        previousListId = selectListaPrecio.value;
+        recalcularTodasLasFilas();
+    });
+
+    // 4. CREACIÓN DE UNA FILA EN LA GRILLA
+    function crearFila(datos = null) {
+        const tr = document.createElement('tr');
+        tr.className = 'fila-renglon';
+        tr.dataset.productoId = '';
+        tr.dataset.unitPrice = '0';
+        tr.dataset.requestId = '0';
+
+        tr.innerHTML = `
+            <td>
+                <div class="input-group input-group-sm">
+                    <input type="text" name="codigo[]" class="form-control form-control-sm font-monospace input-codigo text-uppercase fw-bold" placeholder="CÓDIGO" autocomplete="off">
+                    <button type="button" class="btn btn-outline-secondary btn-buscar-modal" title="Buscar por descripción">
+                        <i class="bi bi-search"></i>
+                    </button>
+                </div>
+                <input type="hidden" name="producto_id[]" class="input-producto-id">
+                <div class="msg-error-fila text-danger small mt-1" style="display: none; font-size: 0.75rem;"></div>
+            </td>
+            <td>
+                <div class="desc-producto-nombre fw-semibold text-dark text-truncate" style="max-width: 290px;">
+                    <span class="text-muted fst-italic">Ingrese código y presione Enter</span>
+                </div>
+                <div class="d-flex align-items-center gap-1 mt-1">
+                    <span class="text-muted small" style="font-size: 0.75rem;">Pres:</span>
+                    <select name="presentacion_id[]" class="form-select form-select-sm select-presentacion py-0" style="font-size: 0.78rem;">
+                        <option value="">Unidad Base (x1)</option>
+                    </select>
+                    <span class="badge bg-light text-muted border stock-badge ms-auto" style="font-size: 0.70rem;">Stock: -</span>
+                </div>
+            </td>
+            <td>
+                <input type="number" step="1" min="1" name="cantidad[]" class="form-control form-control-sm text-center fw-bold input-cantidad" placeholder="1" value="1" required>
+            </td>
+            <td>
+                <input type="text" class="form-control form-control-sm text-end bg-light input-precio" placeholder="$ 0,00" readonly tabindex="-1">
+            </td>
+            <td>
+                <input type="number" step="0.01" min="0" max="100" name="porcentaje_descuento[]" class="form-control form-control-sm text-end input-descuento" placeholder="0.00" value="0.00">
+            </td>
+            <td>
+                <input type="text" class="form-control form-control-sm text-end bg-light fw-bold input-total" placeholder="$ 0,00" readonly tabindex="0">
+            </td>
+            <td class="text-center">
+                <button type="button" class="btn btn-sm btn-outline-danger btn-eliminar-fila" title="Quitar renglón">
+                    <i class="bi bi-trash"></i>
+                </button>
+            </td>
+        `;
+
+        tbody.appendChild(tr);
+
+        if (datos && (datos.codigo || datos.producto_id)) {
+            const inputCodigo = tr.querySelector('.input-codigo');
+            inputCodigo.value = datos.codigo || '';
+            const inputCant = tr.querySelector('.input-cantidad');
+            if (datos.cantidad) inputCant.value = datos.cantidad;
+            const inputDesc = tr.querySelector('.input-descuento');
+            if (datos.descuento !== undefined) inputDesc.value = datos.descuento;
+
+            // Cargar producto
+            handleCodigo(tr, false);
+
+            if (datos.presentacion_id) {
+                const selectPres = tr.querySelector('.select-presentacion');
+                selectPres.value = datos.presentacion_id;
+                handlePresentacionChange(tr);
+            }
+        }
+
+        return tr;
+    }
+
+    // 5. MANEJADORES DE LÓGICA DE FILA
+    function mostrarErrorFila(row, msg) {
+        const errorDiv = row.querySelector('.msg-error-fila');
+        if (msg) {
+            errorDiv.textContent = msg;
+            errorDiv.style.display = 'block';
+            row.classList.add('table-danger');
+        } else {
+            errorDiv.textContent = '';
+            errorDiv.style.display = 'none';
+            row.classList.remove('table-danger');
+        }
+    }
+
+    function handleCodigo(row, focusNext = true) {
+        const inputCodigo = row.querySelector('.input-codigo');
+        const code = inputCodigo.value.trim();
+        const requestId = (parseInt(row.dataset.requestId || '0', 10) + 1);
+        row.dataset.requestId = requestId;
+
+        mostrarErrorFila(row, null);
+
+        if (!code) {
+            mostrarErrorFila(row, "Ingrese un código de producto.");
+            if (focusNext) { inputCodigo.focus(); inputCodigo.select(); }
+            return;
+        }
+
+        const prod = catalogByCode[code.toUpperCase()];
+        if (!prod) {
+            mostrarErrorFila(row, `Código "${code}" no encontrado o producto inactivo.`);
+            row.dataset.productoId = '';
+            row.dataset.unitPrice = '0';
+            row.querySelector('.input-producto-id').value = '';
+            row.querySelector('.desc-producto-nombre').innerHTML = '<span class="text-danger fst-italic">Producto no encontrado</span>';
+            row.querySelector('.input-precio').value = '$ 0,00';
+            row.querySelector('.input-total').value = '$ 0,00';
+            row.querySelector('.stock-badge').textContent = 'Stock: -';
+            recalcularTotalesGenerales();
+            if (focusNext) { inputCodigo.focus(); inputCodigo.select(); }
+            return;
+        }
+
+        // Si llegó una respuesta asíncrona atrasada que no coincida con el requestId actual, se descarta
+        if (parseInt(row.dataset.requestId, 10) !== requestId) {
+            return;
+        }
+
+        // Producto encontrado
+        row.dataset.productoId = prod.id;
+        row.querySelector('.input-producto-id').value = prod.id;
+        inputCodigo.value = prod.codigo; // Normalizar formato oficial del código conservando ceros
+        row.querySelector('.desc-producto-nombre').textContent = `[${prod.codigo}] ${prod.nombre}`;
+        row.querySelector('.stock-badge').textContent = `Stock: ${prod.stock}`;
+
+        // Cargar presentaciones
+        const selectPres = row.querySelector('.select-presentacion');
+        selectPres.innerHTML = '';
+        let defaultPres = null;
+        prod.presentaciones.forEach(pres => {
+            const opt = document.createElement('option');
+            opt.value = pres.id;
+            opt.dataset.factor = pres.factor;
+            opt.textContent = `${pres.nombre} (x${pres.factor})`;
+            if (pres.es_default) {
+                opt.selected = true;
+                defaultPres = pres;
+            }
+            selectPres.appendChild(opt);
         });
-        nuevaFila.querySelectorAll('select').forEach(sel => sel.selectedIndex = 0);
-        tbody.appendChild(nuevaFila);
+        if (!defaultPres && prod.presentaciones.length > 0) {
+            selectPres.selectedIndex = 0;
+            defaultPres = prod.presentaciones[0];
+        }
+
+        // Resolver precio desde la lista seleccionada
+        const currentListId = selectListaPrecio.value;
+        const basePriceStr = prod.precios[String(currentListId)];
+        if (!basePriceStr) {
+            const listaNombre = selectListaPrecio.options[selectListaPrecio.selectedIndex]?.text || 'lista';
+            mostrarErrorFila(row, `El producto no tiene precio definido en la ${listaNombre}.`);
+            row.dataset.unitPrice = '0';
+            row.querySelector('.input-precio').value = '$ 0,00';
+            row.querySelector('.input-total').value = '$ 0,00';
+            recalcularTotalesGenerales();
+            if (focusNext) { inputCodigo.focus(); inputCodigo.select(); }
+            return;
+        }
+
+        const factor = defaultPres ? (defaultPres.factor || 1) : 1;
+        const unitPrice = parseFloat(basePriceStr) * factor;
+        row.dataset.unitPrice = unitPrice.toFixed(2);
+        row.querySelector('.input-precio').value = formatMoney(unitPrice);
+
+        recalcularFila(row);
+
+        // Foco inmediato en Cantidad y selección de su contenido
+        if (focusNext) {
+            const inputCant = row.querySelector('.input-cantidad');
+            inputCant.focus();
+            inputCant.select();
+        }
+    }
+
+    function handlePresentacionChange(row) {
+        const prodId = row.dataset.productoId;
+        if (!prodId) return;
+
+        const code = row.querySelector('.input-codigo').value.trim();
+        const prod = catalogByCode[code.toUpperCase()];
+        if (!prod) return;
+
+        const currentListId = selectListaPrecio.value;
+        const basePriceStr = prod.precios[String(currentListId)];
+        if (!basePriceStr) return;
+
+        const selectPres = row.querySelector('.select-presentacion');
+        const selectedOpt = selectPres.options[selectPres.selectedIndex];
+        const factor = selectedOpt ? parseInt(selectedOpt.dataset.factor || '1', 10) : 1;
+
+        const unitPrice = parseFloat(basePriceStr) * factor;
+        row.dataset.unitPrice = unitPrice.toFixed(2);
+        row.querySelector('.input-precio').value = formatMoney(unitPrice);
+
+        recalcularFila(row);
+    }
+
+    function handleCantidad(row) {
+        const inputCant = row.querySelector('.input-cantidad');
+        const valStr = inputCant.value.trim().replace(',', '.');
+
+        mostrarErrorFila(row, null);
+
+        // Validación estricta: entero positivo > 0 (sin truncamiento silencioso)
+        if (!valStr || isNaN(valStr) || Number(valStr) <= 0 || !Number.isInteger(Number(valStr))) {
+            mostrarErrorFila(row, "La cantidad debe ser un número entero mayor a 0.");
+            inputCant.focus();
+            inputCant.select();
+            return;
+        }
+
+        recalcularFila(row);
+
+        // Enfocar Descuento (%) y seleccionar su contenido
+        const inputDesc = row.querySelector('.input-descuento');
+        inputDesc.focus();
+        inputDesc.select();
+    }
+
+    function handleDescuento(row) {
+        const inputDesc = row.querySelector('.input-descuento');
+        let valStr = inputDesc.value.trim().replace(',', '.');
+        if (valStr === '') valStr = '0';
+
+        mostrarErrorFila(row, null);
+
+        const descNum = parseFloat(valStr);
+        if (isNaN(descNum) || descNum < 0 || descNum > 100) {
+            mostrarErrorFila(row, "El porcentaje de descuento debe estar entre 0 y 100%.");
+            inputDesc.focus();
+            inputDesc.select();
+            return;
+        }
+
+        inputDesc.value = descNum.toFixed(2);
+        recalcularFila(row);
+
+        // Enfocar Total (solo lectura enfocable)
+        const inputTotal = row.querySelector('.input-total');
+        inputTotal.focus();
+    }
+
+    function handleTotal(row) {
+        // Validar que la fila actual esté completa antes de confirmar
+        const prodId = row.dataset.productoId;
+        const unitPrice = parseFloat(row.dataset.unitPrice || '0');
+        const cant = parseInt(row.querySelector('.input-cantidad').value, 10);
+
+        if (!prodId || unitPrice <= 0 || isNaN(cant) || cant <= 0) {
+            mostrarErrorFila(row, "Renglón incompleto. Complete código y cantidad antes de continuar.");
+            row.querySelector('.input-codigo').focus();
+            return;
+        }
+
+        // Buscar siguiente fila existente
+        let nextRow = row.nextElementSibling;
+        while (nextRow && !nextRow.classList.contains('fila-renglon')) {
+            nextRow = nextRow.nextElementSibling;
+        }
+
+        if (nextRow) {
+            const nextCodigo = nextRow.querySelector('.input-codigo');
+            nextCodigo.focus();
+            nextCodigo.select();
+        } else {
+            // Si es la última fila, crear una nueva y enfocar su código
+            const newRow = crearFila();
+            const newCodigo = newRow.querySelector('.input-codigo');
+            newCodigo.focus();
+        }
+    }
+
+    // 6. CÁLCULO ARITMÉTICO EXACTO POR FILA Y TOTALES
+    function recalcularFila(row) {
+        const unitPrice = parseFloat(row.dataset.unitPrice || '0');
+        const cantStr = row.querySelector('.input-cantidad').value.trim().replace(',', '.');
+        const cant = parseFloat(cantStr) || 0;
+        const descStr = row.querySelector('.input-descuento').value.trim().replace(',', '.');
+        const desc = parseFloat(descStr) || 0;
+
+        // Bruto = cantidad * precio unitario
+        const bruto = cant * unitPrice;
+        // Descuento monetario = bruto * porcentaje / 100
+        const descuentoMonetario = Math.round((bruto * (desc / 100)) * 100) / 100;
+        // Total fila = bruto - descuento monetario
+        const totalFila = Math.round((bruto - descuentoMonetario) * 100) / 100;
+
+        row.dataset.bruto = bruto.toFixed(2);
+        row.dataset.descuentoMonetario = descuentoMonetario.toFixed(2);
+        row.dataset.totalFila = totalFila.toFixed(2);
+
+        row.querySelector('.input-total').value = formatMoney(totalFila);
+
+        recalcularTotalesGenerales();
+    }
+
+    function recalcularTodasLasFilas() {
+        const rows = tbody.querySelectorAll('.fila-renglon');
+        rows.forEach(row => {
+            if (row.dataset.productoId) {
+                handleCodigo(row, false);
+                handlePresentacionChange(row);
+            }
+        });
+        recalcularTotalesGenerales();
+    }
+
+    function recalcularTotalesGenerales() {
+        let subtotalAcum = 0;
+        let descuentoAcum = 0;
+        let totalGeneralAcum = 0;
+
+        const rows = tbody.querySelectorAll('.fila-renglon');
+        rows.forEach(row => {
+            if (row.dataset.productoId) {
+                const b = parseFloat(row.dataset.bruto || '0');
+                const d = parseFloat(row.dataset.descuentoMonetario || '0');
+                const t = parseFloat(row.dataset.totalFila || '0');
+                subtotalAcum += b;
+                descuentoAcum += d;
+                totalGeneralAcum += t;
+            }
+        });
+
+        document.getElementById('resumenSubtotal').textContent = formatMoney(subtotalAcum);
+        document.getElementById('resumenDescuento').textContent = formatMoney(descuentoAcum);
+        document.getElementById('resumenTotalGeneral').textContent = formatMoney(totalGeneralAcum);
+    }
+
+    // 7. EVENTOS DE TECLADO Y NAVEGACIÓN EN LA GRILLA
+    tbody.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault(); // Evitar envío del formulario mediante Enter dentro de la tabla
+            const target = e.target;
+            const row = target.closest('.fila-renglon');
+            if (!row) return;
+
+            if (target.classList.contains('input-codigo')) {
+                handleCodigo(row, true);
+            } else if (target.classList.contains('input-cantidad')) {
+                handleCantidad(row);
+            } else if (target.classList.contains('input-descuento')) {
+                handleDescuento(row);
+            } else if (target.classList.contains('input-total')) {
+                handleTotal(row);
+            }
+        }
+    });
+
+    tbody.addEventListener('input', function(e) {
+        const target = e.target;
+        const row = target.closest('.fila-renglon');
+        if (!row) return;
+
+        if (target.classList.contains('input-cantidad') || target.classList.contains('input-descuento')) {
+            recalcularFila(row);
+        }
+    });
+
+    tbody.addEventListener('change', function(e) {
+        const target = e.target;
+        const row = target.closest('.fila-renglon');
+        if (!row) return;
+
+        if (target.classList.contains('select-presentacion')) {
+            handlePresentacionChange(row);
+        }
     });
 
     tbody.addEventListener('click', function(e) {
-        const btn = e.target.closest('.btn-eliminar-fila');
-        if (btn && tbody.querySelectorAll('.fila-renglon').length > 1) {
-            btn.closest('.fila-renglon').remove();
+        const btnEliminar = e.target.closest('.btn-eliminar-fila');
+        if (btnEliminar) {
+            const row = btnEliminar.closest('.fila-renglon');
+            if (tbody.querySelectorAll('.fila-renglon').length > 1) {
+                row.remove();
+            } else {
+                // Si es la única fila, limpiarla en vez de eliminarla
+                row.dataset.productoId = '';
+                row.dataset.unitPrice = '0';
+                row.querySelector('.input-codigo').value = '';
+                row.querySelector('.input-producto-id').value = '';
+                row.querySelector('.desc-producto-nombre').innerHTML = '<span class="text-muted fst-italic">Ingrese código y presione Enter</span>';
+                row.querySelector('.select-presentacion').innerHTML = '<option value="">Unidad Base (x1)</option>';
+                row.querySelector('.stock-badge').textContent = 'Stock: -';
+                row.querySelector('.input-cantidad').value = '1';
+                row.querySelector('.input-precio').value = '$ 0,00';
+                row.querySelector('.input-descuento').value = '0.00';
+                row.querySelector('.input-total').value = '$ 0,00';
+                mostrarErrorFila(row, null);
+            }
+            recalcularTotalesGenerales();
+            return;
+        }
+
+        const btnBuscar = e.target.closest('.btn-buscar-modal');
+        if (btnBuscar) {
+            rowSearchTarget = btnBuscar.closest('.fila-renglon');
+            abrirModalBusqueda();
         }
     });
+
+    // Botones para agregar fila
+    document.getElementById('btnAgregarFila').addEventListener('click', function() {
+        const newRow = crearFila();
+        newRow.querySelector('.input-codigo').focus();
+    });
+    document.getElementById('btnAgregarFilaPie').addEventListener('click', function() {
+        const newRow = crearFila();
+        newRow.querySelector('.input-codigo').focus();
+    });
+
+    // Atajo F2 global para agregar fila
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'F2') {
+            e.preventDefault();
+            const newRow = crearFila();
+            newRow.querySelector('.input-codigo').focus();
+        }
+    });
+
+    // 8. MODAL DE BÚSQUEDA POR DESCRIPCIÓN
+    const modalEl = document.getElementById('modalBuscarProducto');
+    const modalBs = new bootstrap.Modal(modalEl);
+    const inputBuscarModal = document.getElementById('inputBuscarModal');
+    const tbodyModal = document.getElementById('tbodyModalResultados');
+
+    function renderModalCatalog(query = '') {
+        const q = query.toLowerCase().trim();
+        const currentListId = selectListaPrecio.value;
+        tbodyModal.innerHTML = '';
+
+        const filtrados = catalogArray.filter(p => {
+            if (!q) return true;
+            return p.codigo.toLowerCase().includes(q) ||
+                   p.nombre.toLowerCase().includes(q) ||
+                   p.categoria.toLowerCase().includes(q) ||
+                   p.marca.toLowerCase().includes(q);
+        }).slice(0, 50); // Primeros 50 resultados para máxima fluidez
+
+        if (filtrados.length === 0) {
+            tbodyModal.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-3">No se encontraron productos coincidentes.</td></tr>';
+            return;
+        }
+
+        filtrados.forEach(p => {
+            const tr = document.createElement('tr');
+            tr.style.cursor = 'pointer';
+            const price = p.precios[String(currentListId)];
+            const priceDisplay = price ? formatMoney(price) : '<span class="text-danger small">Sin precio</span>';
+
+            tr.innerHTML = `
+                <td class="font-monospace fw-bold text-primary">${p.codigo}</td>
+                <td class="fw-semibold text-dark">${p.nombre}</td>
+                <td class="text-muted small">${p.categoria || '-'} / ${p.marca || '-'}</td>
+                <td class="text-center"><span class="badge ${p.stock > 0 ? 'bg-success-subtle text-success' : 'bg-danger-subtle text-danger'} border">${p.stock}</span></td>
+                <td class="text-end font-monospace">${priceDisplay}</td>
+            `;
+
+            tr.addEventListener('click', function() {
+                seleccionarProductoDesdeModal(p.codigo);
+            });
+
+            tbodyModal.appendChild(tr);
+        });
+    }
+
+    function abrirModalBusqueda() {
+        inputBuscarModal.value = '';
+        renderModalCatalog('');
+        modalBs.show();
+        setTimeout(() => inputBuscarModal.focus(), 300);
+    }
+
+    document.getElementById('btnAbrirModalBusquedaGlobal').addEventListener('click', function() {
+        // Asignar la última fila o crear una
+        const rows = tbody.querySelectorAll('.fila-renglon');
+        rowSearchTarget = rows[rows.length - 1];
+        abrirModalBusqueda();
+    });
+
+    inputBuscarModal.addEventListener('input', function() {
+        renderModalCatalog(this.value);
+    });
+
+    function seleccionarProductoDesdeModal(codigo) {
+        modalBs.hide();
+        if (!rowSearchTarget) {
+            rowSearchTarget = crearFila();
+        }
+        const inputCodigo = rowSearchTarget.querySelector('.input-codigo');
+        inputCodigo.value = codigo;
+        handleCodigo(rowSearchTarget, true);
+    }
+
+    // 9. PREVENIR DOBLE ENVÍO Y VALIDAR ANTES DE EMITIR
+    formRemito.addEventListener('submit', function(e) {
+        // Evitar que el botón emita dos veces
+        btnEmitir.disabled = true;
+        btnEmitir.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span> Emitiendo remito...';
+    });
+
+    // 10. INICIALIZACIÓN
+    // Si hay filas previas (ej. tras un error de validación), restaurarlas
+    const scriptRecargadas = document.getElementById('filasRecargadasScript');
+    let filasRecargadas = [];
+    if (scriptRecargadas) {
+        try {
+            filasRecargadas = JSON.parse(scriptRecargadas.textContent);
+        } catch (err) {}
+    }
+
+    if (Array.isArray(filasRecargadas) && filasRecargadas.length > 0) {
+        filasRecargadas.forEach(f => crearFila(f));
+    } else {
+        // Fila inicial por defecto
+        const primeraFila = crearFila();
+        primeraFila.querySelector('.input-codigo').focus();
+    }
+
+    recalcularTotalesGenerales();
 });
 </script>
 {% endblock %}

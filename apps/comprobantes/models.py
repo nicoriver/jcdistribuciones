@@ -85,6 +85,20 @@ class Remito(models.Model):
         blank=True,
         verbose_name="ID Pedido de Origen"
     )
+    fecha = models.DateField(
+        null=True,
+        blank=True,
+        verbose_name="Fecha Comercial",
+        help_text="Fecha comercial elegida para el comprobante"
+    )
+    tipo_lista_precio = models.ForeignKey(
+        'productos.TipoListaPrecio',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='remitos',
+        verbose_name="Lista de Precios Utilizada"
+    )
     fecha_emision = models.DateTimeField(
         auto_now_add=True,
         verbose_name="Fecha de Emisión"
@@ -148,6 +162,10 @@ class Remito(models.Model):
         super().save(*args, **kwargs)
 
     # Propiedades de compatibilidad
+    @property
+    def fecha_comercial(self):
+        return self.fecha or self.fecha_emision.date()
+
     @property
     def numero_remito(self):
         return self.numero_completo

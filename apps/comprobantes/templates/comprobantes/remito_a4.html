@@ -87,7 +87,8 @@
                 <h4 class="fw-bold text-dark mb-0">REMITO</h4>
                 <div class="fs-5 font-monospace fw-bold">{{ remito.numero_completo }}</div>
                 <div class="small">Punto de Venta: <strong>{{ remito.punto_venta|stringformat:"04d" }}</strong> | Nro: <strong>{{ remito.numero|stringformat:"08d" }}</strong></div>
-                <div class="small">Fecha de Emisión: <strong>{{ remito.fecha_emision|date:"d/m/Y H:i" }}</strong></div>
+                <div class="small">Fecha: <strong>{{ remito.fecha_comercial|date:"d/m/Y" }}</strong></div>
+                <div class="small text-muted" style="font-size: 10px;">Emisión del sistema: {{ remito.fecha_emision|date:"d/m/Y H:i" }}</div>
                 {% if remito.pedido_origen_id %}
                 <div class="small">Pedido Origen ID: <strong>#{{ remito.pedido_origen_id }}</strong></div>
                 {% endif %}

@@ -196,6 +196,7 @@ class ProductoForm(forms.ModelForm):
         fields = [
             'codigo', 'codigo_barras', 'nombre', 'descripcion',
             'categoria', 'marca', 'alicuota_iva', 'costo_base',
+            'descuento_distribuidor',
             'punto_reposicion', 'controla_stock', 'activo'
         ]
         widgets = {
@@ -207,6 +208,13 @@ class ProductoForm(forms.ModelForm):
             'marca': forms.Select(attrs={'class': 'form-select'}),
             'alicuota_iva': forms.Select(attrs={'class': 'form-select'}),
             'costo_base': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01'}),
+            'descuento_distribuidor': forms.NumberInput(attrs={
+                'class': 'form-control',
+                'step': '0.01',
+                'min': '0',
+                'max': '100',
+                'placeholder': '0.00'
+            }),
             'punto_reposicion': forms.NumberInput(attrs={'class': 'form-control', 'step': '1'}),
             'controla_stock': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
             'activo': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
@@ -232,6 +240,7 @@ class ProductoForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         self.fields['codigo_barras'].required = False
         self.fields['descripcion'].required = False
+        self.fields['descuento_distribuidor'].required = False
 
         # Si estamos editando, mostrar stock actual informativo sin permitir alteración directa
         if self.instance and self.instance.pk:
@@ -257,6 +266,16 @@ class ProductoForm(forms.ModelForm):
 
         return codigo
 
+    def clean_descuento_distribuidor(self):
+        val = self.cleaned_data.get('descuento_distribuidor')
+        if val is None or val == '':
+            return Decimal('0.00')
+        if isinstance(val, str):
+            val = Decimal(val.replace(',', '.'))
+        if val < Decimal('0.00') or val > Decimal('100.00'):
+            raise forms.ValidationError("El descuento del distribuidor debe estar comprendido entre 0 y 100%.")
+        return val
+
     def save(self, commit=True):
         producto = super().save(commit=False)
 
@@ -266,6 +285,7 @@ class ProductoForm(forms.ModelForm):
             campos_comerciales = [
                 'codigo', 'codigo_barras', 'nombre', 'descripcion',
                 'categoria', 'marca', 'alicuota_iva', 'costo_base',
+                'descuento_distribuidor',
                 'punto_reposicion', 'controla_stock', 'activo'
             ]
             if commit:

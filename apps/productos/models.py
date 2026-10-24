@@ -1,5 +1,7 @@
 from decimal import Decimal, ROUND_HALF_UP
 from django.db import models
+from django.core.validators import MinValueValidator, MaxValueValidator
+from django.core.exceptions import ValidationError
 
 
 IVA_CHOICES = [
@@ -135,6 +137,17 @@ class Producto(models.Model):
         default=Decimal('0.00'),
         verbose_name="Precio de Costo Base"
     )
+    descuento_distribuidor = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        verbose_name="Descuento del distribuidor (%)",
+        help_text="Descuento otorgado por el distribuidor/proveedor. Disponible para cálculos e informes",
+        validators=[
+            MinValueValidator(Decimal('0.00')),
+            MaxValueValidator(Decimal('100.00')),
+        ]
+    )
     stock_actual = models.IntegerField(
         default=0,
         verbose_name="Stock Actual"
@@ -163,6 +176,11 @@ class Producto(models.Model):
         super().clean()
         if isinstance(self.alicuota_iva, AlicuotaIVA):
             self.alicuota_iva = self.alicuota_iva.porcentaje
+        if self.descuento_distribuidor is not None:
+            if self.descuento_distribuidor < Decimal('0.00') or self.descuento_distribuidor > Decimal('100.00'):
+                raise ValidationError({
+                    'descuento_distribuidor': "El descuento del distribuidor debe estar comprendido entre 0 y 100%."
+                })
 
     def save(self, *args, **kwargs):
         if isinstance(self.alicuota_iva, AlicuotaIVA):

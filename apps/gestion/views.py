@@ -1,4 +1,5 @@
-from decimal import Decimal
+import json
+from decimal import Decimal, ROUND_HALF_UP
 from datetime import datetime
 from functools import wraps
 from django.shortcuts import render, redirect, get_object_or_404
@@ -10,6 +11,8 @@ from django.http import HttpResponseForbidden, HttpResponseBadRequest, HttpRespo
 from django.db import models
 from django.db.models import Q, F, Sum
 from django.utils import timezone
+from django.utils.safestring import mark_safe
+from django.urls import reverse
 from django.core.paginator import Paginator
 
 from clientes.models import Cliente, Vendedor, AsignacionZonaVendedor, CondicionIVA
@@ -202,93 +205,312 @@ class FacturarPedidoActionView(View):
 facturar_pedido_action_view = FacturarPedidoActionView.as_view()
 
 
+def _get_remito_directo_context(cliente_id=None, tipo_lista_precio_id=None, fecha_val=None, observaciones='', filas=None):
+    clientes = Cliente.objects.filter(activo=True).select_related('vendedor', 'zona', 'tipo_lista_precio').order_by('razon_social')
+    listas_precio = TipoListaPrecio.objects.filter(activa=True).order_by('nombre')
+
+    minorista_qs = TipoListaPrecio.objects.filter(activa=True, nombre__iexact='Minorista')
+    if minorista_qs.count() == 1:
+        default_lista = minorista_qs.first()
+    else:
+        minorista_qs = TipoListaPrecio.objects.filter(activa=True, nombre__icontains='minorista')
+        if minorista_qs.count() == 1:
+            default_lista = minorista_qs.first()
+        else:
+            default_lista = None
+
+    selected_lista_id = tipo_lista_precio_id
+    if not selected_lista_id and default_lista:
+        selected_lista_id = default_lista.id
+
+    fecha_hoy = fecha_val or timezone.localdate().isoformat()
+
+    productos_qs = (
+        Producto.objects.filter(activo=True)
+        .select_related('categoria', 'marca')
+        .prefetch_related('presentaciones', 'precios', 'precios__tipo_lista')
+        .order_by('nombre')
+    )
+
+    catalog_data = {}
+    for p in productos_qs:
+        presentaciones_list = [
+            {
+                'id': pres.id,
+                'nombre': pres.nombre,
+                'factor': pres.factor_conversion,
+                'es_default': pres.es_default
+            }
+            for pres in p.presentaciones.all()
+        ]
+        if not presentaciones_list:
+            presentaciones_list = [{
+                'id': '',
+                'nombre': 'Unidad Base (x1)',
+                'factor': 1,
+                'es_default': True
+            }]
+        elif not any(x['es_default'] for x in presentaciones_list):
+            presentaciones_list[0]['es_default'] = True
+
+        precios_dict = {
+            str(pr.tipo_lista_id): str(pr.precio_final)
+            for pr in p.precios.all()
+            if pr.tipo_lista_id
+        }
+
+        catalog_data[str(p.codigo).strip()] = {
+            'id': p.id,
+            'codigo': str(p.codigo).strip(),
+            'nombre': p.nombre,
+            'categoria': p.categoria.nombre if p.categoria else '',
+            'marca': p.marca.nombre if p.marca else '',
+            'stock': p.stock_actual,
+            'presentaciones': presentaciones_list,
+            'precios': precios_dict
+        }
+
+    return {
+        'clientes': clientes,
+        'listas_precio': listas_precio,
+        'default_lista': default_lista,
+        'selected_lista_id': int(selected_lista_id) if selected_lista_id and str(selected_lista_id).isdigit() else None,
+        'selected_cliente_id': int(cliente_id) if cliente_id and str(cliente_id).isdigit() else None,
+        'fecha_seleccionada': fecha_hoy,
+        'observaciones': observaciones or '',
+        'filas_recargadas': filas or [],
+        'catalog_data_json': json.dumps(catalog_data),
+        'catalog_list': list(catalog_data.values()),
+    }
+
+
 @method_decorator(role_required(['SUPERVISOR', 'ADMIN', 'FACTURACION']), name='dispatch')
 class VentaDirectaRemitoView(View):
     """
     Formulario interactivo (/gestion/remito-directo/) para emitir un Remito A4
     sin pedido previo (venta directa de mostrador / despacho inmediato).
+    Optimizado para carga por teclado con recorrido por tecla Enter.
     """
     template_name = 'gestion/remito_directo.html'
 
     def get(self, request):
-        clientes = Cliente.objects.filter(activo=True).select_related('vendedor', 'zona', 'tipo_lista_precio').order_by('razon_social')
-        vendedores = Vendedor.objects.filter(activo=True).order_by('apellido', 'nombre')
-        productos = (
-            Producto.objects.filter(activo=True)
-            .select_related('categoria', 'marca')
-            .prefetch_related('presentaciones', 'precios', 'precios__tipo_lista')
-            .order_by('nombre')
-        )
-        context = {
-            'clientes': clientes,
-            'vendedores': vendedores,
-            'productos': productos,
-        }
+        context = _get_remito_directo_context()
         return render(request, self.template_name, context)
 
     def post(self, request):
         cliente_id = request.POST.get('cliente_id')
-        vendedor_id = request.POST.get('vendedor_id')
+        fecha_str = request.POST.get('fecha') or timezone.localdate().isoformat()
+        tipo_lista_precio_id = request.POST.get('tipo_lista_precio_id')
         observaciones = request.POST.get('observaciones', '').strip()
 
-        cliente = get_object_or_404(Cliente, id=cliente_id) if cliente_id else None
-        vendedor = (
-            Vendedor.objects.filter(id=vendedor_id).first()
-            if vendedor_id
-            else (cliente.vendedor if cliente else None)
-        )
-
+        codigos = request.POST.getlist('codigo[]') or request.POST.getlist('codigo')
         prod_ids = request.POST.getlist('producto_id[]') or request.POST.getlist('producto_id')
         pres_ids = request.POST.getlist('presentacion_id[]') or request.POST.getlist('presentacion_id')
         cantidades = request.POST.getlist('cantidad[]') or request.POST.getlist('cantidad')
+        descuentos = (
+            request.POST.getlist('porcentaje_descuento[]')
+            or request.POST.getlist('descuento_porcentaje[]')
+            or request.POST.getlist('porcentaje_descuento')
+        )
         precios = request.POST.getlist('precio_unitario[]') or request.POST.getlist('precio_unitario')
-        descuentos = request.POST.getlist('porcentaje_descuento[]') or request.POST.getlist('descuento_porcentaje[]') or request.POST.getlist('porcentaje_descuento')
 
+        max_rows = max(len(codigos), len(prod_ids), len(cantidades), len(descuentos), len(precios), 0)
+        filas_recargadas = []
+        errores_filas = []
         items_data = []
-        for idx in range(len(prod_ids)):
-            p_id = prod_ids[idx]
-            if not p_id:
+
+        # 1. Validación de Cliente
+        cliente = None
+        if cliente_id and str(cliente_id).isdigit():
+            cliente = Cliente.objects.filter(id=int(cliente_id), activo=True).select_related('vendedor', 'tipo_lista_precio').first()
+
+        if not cliente:
+            messages.error(request, "Debe seleccionar un cliente activo válido.")
+
+        # 2. Vendedor: resuelto estrictamente del cliente en el backend
+        vendedor = getattr(cliente, 'vendedor', None) if cliente else None
+        if cliente and not vendedor:
+            edit_url = reverse('gestion:cliente_editar', args=[cliente.id])
+            messages.error(
+                request,
+                mark_safe(
+                    f"El cliente <strong>{cliente.razon_social}</strong> no tiene un vendedor asignado. "
+                    f"Debe asignarle un vendedor para poder emitir el remito. "
+                    f"<a href='{edit_url}' class='alert-link fw-bold' target='_blank'>Haga clic aquí para editar la ficha del cliente</a>."
+                )
+            )
+
+        # 3. Validación de Lista de Precios
+        tipo_lista = None
+        if tipo_lista_precio_id and str(tipo_lista_precio_id).isdigit():
+            tipo_lista = TipoListaPrecio.objects.filter(id=int(tipo_lista_precio_id), activa=True).first()
+        elif not tipo_lista_precio_id and cliente and getattr(cliente, 'tipo_lista_precio', None):
+            # Compatibilidad con solicitudes legacy que no envían selector de lista
+            tipo_lista = cliente.tipo_lista_precio
+
+        precios_explicit = [p.strip() for p in precios if p and p.strip()]
+        if not tipo_lista and not precios_explicit:
+            messages.error(request, "Debe seleccionar una lista de precios activa válida.")
+
+        # 4. Procesar y validar renglones
+        for idx in range(max_rows):
+            codigo_val = codigos[idx].strip() if idx < len(codigos) else ''
+            p_id_val = prod_ids[idx].strip() if idx < len(prod_ids) else ''
+            pres_id_val = pres_ids[idx].strip() if idx < len(pres_ids) else ''
+            cant_val = cantidades[idx].strip() if idx < len(cantidades) else ''
+            desc_val = descuentos[idx].strip() if idx < len(descuentos) else ''
+            precio_val = precios[idx].strip() if idx < len(precios) else ''
+
+            # Fila completamente vacía -> no impide emitir
+            if not codigo_val and not p_id_val and not cant_val and (not desc_val or desc_val in ('0', '0.00')):
                 continue
-            producto = Producto.objects.filter(id=p_id).first()
+
+            fila_dict = {
+                'codigo': codigo_val,
+                'producto_id': p_id_val,
+                'presentacion_id': pres_id_val,
+                'cantidad': cant_val,
+                'descuento': desc_val or '0.00',
+            }
+            filas_recargadas.append(fila_dict)
+
+            # Fila incompleta con datos
+            if not p_id_val and not codigo_val:
+                errores_filas.append(f"Renglón #{idx+1}: Incompleto. Ingrese el código del producto.")
+                continue
+
+            producto = None
+            if p_id_val and p_id_val.isdigit():
+                producto = Producto.objects.filter(id=int(p_id_val), activo=True).first()
+            elif codigo_val:
+                producto = Producto.objects.filter(codigo__iexact=codigo_val, activo=True).first()
+
             if not producto:
+                errores_filas.append(f"Renglón #{idx+1}: El producto con código '{codigo_val}' no existe o se encuentra inactivo.")
                 continue
 
-            pres_id = pres_ids[idx] if idx < len(pres_ids) and pres_ids[idx] else None
-            presentacion = Presentacion.objects.filter(id=pres_id, producto=producto).first() if pres_id else None
+            presentacion = None
+            if pres_id_val and pres_id_val.isdigit():
+                presentacion = Presentacion.objects.filter(id=int(pres_id_val), producto=producto).first()
 
-            cant_val = cantidades[idx] if idx < len(cantidades) else '0'
-            precio_val = precios[idx] if idx < len(precios) and precios[idx] != '' else None
-            desc_val = descuentos[idx] if idx < len(descuentos) and descuentos[idx] != '' else '0.00'
+            factor_unidades = int(presentacion.factor_conversion) if presentacion else 1
+
+            if not cant_val:
+                errores_filas.append(f"Renglón #{idx+1} ({producto.nombre}): Debe ingresar una cantidad.")
+                continue
 
             try:
-                cant_int = int(Decimal(str(cant_val)))
-                if cant_int > 0:
-                    item_dict = {
-                        'producto': producto,
-                        'presentacion': presentacion,
-                        'factor_unidades': int(presentacion.factor_conversion) if presentacion else 1,
-                        'cantidad': cant_int,
-                        'porcentaje_descuento': Decimal(str(desc_val)),
-                    }
-                    if precio_val is not None:
-                        item_dict['precio_unitario_historico'] = Decimal(str(precio_val))
-                    items_data.append(item_dict)
+                cant_dec = Decimal(str(cant_val).replace(',', '.'))
             except Exception:
-                pass
+                errores_filas.append(f"Renglón #{idx+1} ({producto.nombre}): Cantidad inválida '{cant_val}'.")
+                continue
 
+            if cant_dec <= Decimal('0'):
+                errores_filas.append(f"Renglón #{idx+1} ({producto.nombre}): La cantidad debe ser mayor a 0.")
+                continue
+
+            if cant_dec % Decimal('1') != Decimal('0'):
+                errores_filas.append(
+                    f"Renglón #{idx+1} ({producto.nombre}): La cantidad debe ser un número entero (se ingresó '{cant_val}'). "
+                    "No se permiten cantidades fraccionarias."
+                )
+                continue
+
+            cantidad_int = int(cant_dec)
+
+            try:
+                desc_str = desc_val.replace(',', '.') if desc_val else '0.00'
+                desc_dec = Decimal(desc_str)
+            except Exception:
+                errores_filas.append(f"Renglón #{idx+1} ({producto.nombre}): Porcentaje de descuento inválido '{desc_val}'.")
+                continue
+
+            if desc_dec < Decimal('0.00') or desc_dec > Decimal('100.00'):
+                errores_filas.append(f"Renglón #{idx+1} ({producto.nombre}): El descuento ({desc_dec}%) debe estar entre 0 y 100.")
+                continue
+
+            # Resolución del precio: si se envió tipo_lista_precio_id, resolver estrictamente en servidor
+            if tipo_lista_precio_id and tipo_lista:
+                precio_lista = PrecioProducto.objects.filter(producto=producto, tipo_lista=tipo_lista).first()
+                if not precio_lista:
+                    errores_filas.append(
+                        f"Renglón #{idx+1}: El producto '{producto.nombre}' [{producto.codigo}] no tiene precio definido en la lista '{tipo_lista.nombre}'."
+                    )
+                    continue
+
+                precio_unitario = (precio_lista.precio_final * Decimal(factor_unidades)).quantize(
+                    Decimal('0.01'), rounding=ROUND_HALF_UP
+                )
+            elif precio_val:
+                # Compatibilidad con solicitudes legacy de prueba que envían precio explícito
+                try:
+                    precio_unitario = Decimal(str(precio_val).replace(',', '.')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+                except Exception:
+                    errores_filas.append(f"Renglón #{idx+1}: Precio unitario inválido '{precio_val}'.")
+                    continue
+            elif tipo_lista:
+                precio_lista = PrecioProducto.objects.filter(producto=producto, tipo_lista=tipo_lista).first()
+                if not precio_lista:
+                    errores_filas.append(
+                        f"Renglón #{idx+1}: El producto '{producto.nombre}' [{producto.codigo}] no tiene precio definido en la lista '{tipo_lista.nombre}'."
+                    )
+                    continue
+                precio_unitario = (precio_lista.precio_final * Decimal(factor_unidades)).quantize(
+                    Decimal('0.01'), rounding=ROUND_HALF_UP
+                )
+            else:
+                errores_filas.append(f"Renglón #{idx+1}: Debe seleccionar una lista de precios para resolver el precio.")
+                continue
+
+            items_data.append({
+                'producto': producto,
+                'presentacion': presentacion,
+                'factor_unidades': factor_unidades,
+                'cantidad': cantidad_int,
+                'porcentaje_descuento': desc_dec,
+                'precio_unitario_historico': precio_unitario,
+            })
+
+        for err in errores_filas:
+            messages.error(request, err)
+
+        if not errores_filas and not items_data:
+            messages.error(request, "Debe cargar al menos un producto válido para emitir el remito.")
+
+        # Si hubo cualquier error, re-renderizar preservando intacta la cabecera y filas
+        if not cliente or not vendedor or not tipo_lista or errores_filas or not items_data:
+            context = _get_remito_directo_context(
+                cliente_id=cliente_id,
+                tipo_lista_precio_id=tipo_lista_precio_id,
+                fecha_val=fecha_str,
+                observaciones=observaciones,
+                filas=filas_recargadas
+            )
+            return render(request, self.template_name, context)
+
+        # 5. Emisión transaccional vía RemitoService
         try:
             remito = RemitoService.emitir_remito(
                 cliente=cliente,
                 vendedor=vendedor,
                 supervisor=request.user,
                 items=items_data,
+                fecha=fecha_str,
+                tipo_lista_precio=tipo_lista,
                 observaciones=observaciones
             )
             messages.success(request, f"Remito directo {remito.numero_completo} emitido correctamente.")
             return redirect('comprobantes:imprimir_remito', remito_id=remito.id)
         except Exception as e:
-            messages.error(request, f"Error al emitir remito directo: {str(e)}")
-            return redirect('gestion:remito_directo')
+            messages.error(request, f"Error al emitir el remito directo: {str(e)}")
+            context = _get_remito_directo_context(
+                cliente_id=cliente_id,
+                tipo_lista_precio_id=tipo_lista_precio_id,
+                fecha_val=fecha_str,
+                observaciones=observaciones,
+                filas=filas_recargadas
+            )
+            return render(request, self.template_name, context)
 
 
 remito_directo_view = VentaDirectaRemitoView.as_view()

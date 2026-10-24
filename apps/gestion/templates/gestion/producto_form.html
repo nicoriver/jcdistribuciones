@@ -83,16 +83,23 @@
                             {% if form.marca.errors %}<div class="text-danger small mt-1">{{ form.marca.errors.0 }}</div>{% endif %}
                         </div>
 
-                        <div class="col-md-6">
+                        <div class="col-md-4">
                             <label class="form-label fw-semibold">Alícuota IVA *</label>
                             {{ form.alicuota_iva }}
                             {% if form.alicuota_iva.errors %}<div class="text-danger small mt-1">{{ form.alicuota_iva.errors.0 }}</div>{% endif %}
                         </div>
 
-                        <div class="col-md-6">
+                        <div class="col-md-4">
                             <label class="form-label fw-semibold">Costo Base ($) *</label>
                             {{ form.costo_base }}
                             {% if form.costo_base.errors %}<div class="text-danger small mt-1">{{ form.costo_base.errors.0 }}</div>{% endif %}
+                        </div>
+
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">Descuento del distribuidor (%)</label>
+                            {{ form.descuento_distribuidor }}
+                            <small class="text-muted d-block mt-1">Descuento otorgado por el distribuidor/proveedor. Disponible para cálculos e informes</small>
+                            {% if form.descuento_distribuidor.errors %}<div class="text-danger small mt-1">{{ form.descuento_distribuidor.errors.0 }}</div>{% endif %}
                         </div>
 
                         <div class="col-12"><hr class="my-2 text-muted"></div>
