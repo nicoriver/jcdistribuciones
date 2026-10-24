@@ -5,7 +5,7 @@ from django.contrib.auth import get_user_model
 
 from geografia.models import Provincia, Localidad, Zona
 from clientes.models import Vendedor, Cliente
-from productos.models import Categoria, Marca, Producto, Presentacion, TipoListaPrecio
+from productos.models import Categoria, Marca, Producto, Presentacion, TipoListaPrecio, PrecioProducto
 from productos.services import CalculadoraPreciosService
 from pedidos.models import Pedido, DetallePedido
 from pedidos.services import PedidoService
@@ -110,7 +110,18 @@ class GestionSupervisorTests(TestCase):
             factor_conversion=6,
             codigo_barras='7791234560006'
         )
+        PrecioProducto.objects.create(
+            producto=self.producto,
+            tipo_lista=self.lista_precio,
+            precio_final=Decimal('1500.00')
+        )
+        PrecioProducto.objects.filter(producto=self.producto, tipo_lista=self.lista_precio).update(
+            precio_final=Decimal('1500.00')
+        )
         CalculadoraPreciosService.actualizar_precios_producto(self.producto)
+        PrecioProducto.objects.filter(producto=self.producto, tipo_lista=self.lista_precio).update(
+            precio_final=Decimal('1500.00')
+        )
 
     def test_ciclo_completo_pedido_aprobado_facturado_por_supervisor_y_redireccion_a4(self):
         """
@@ -234,12 +245,12 @@ class GestionSupervisorTests(TestCase):
 
         resp = self.client.post(url_directo, {
             'cliente_id': self.cliente.id,
-            'vendedor_id': self.vendedor.id,
+            'tipo_lista_precio_id': str(self.lista_precio.id),
             'observaciones': 'Venta directa mostrador efectivo',
+            'codigo[]': [self.producto.codigo],
             'producto_id[]': [str(self.producto.id)],
             'presentacion_id[]': [''],
             'cantidad[]': ['10'],
-            'precio_unitario[]': ['1500.00'],
             'porcentaje_descuento[]': ['0.00'],
         })
 

@@ -227,18 +227,16 @@
     </div>
 </div>
 
-<!-- DATOS DE CATÁLOGO Y FILAS RECARGADAS EN JSON -->
-<script id="catalogDataJson" type="application/json">
-{{ catalog_data_json|safe }}
-</script>
+<!-- DATOS DE CATÁLOGO Y FILAS RECARGADAS EN JSON SEGURO -->
+{{ catalog_data|json_script:"catalogDataScript" }}
 {{ filas_recargadas|json_script:"filasRecargadasScript" }}
 {% endblock %}
 
 {% block extra_js %}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    // 1. CARGA DE CATÁLOGO
-    const catalogDataEl = document.getElementById('catalogDataJson');
+    // 1. CARGA DE CATÁLOGO DESDE JSON_SCRIPT (ESCAPE SEGURO)
+    const catalogDataEl = document.getElementById('catalogDataScript');
     const CATALOG = catalogDataEl ? JSON.parse(catalogDataEl.textContent || '{}') : {};
     
     // Diccionario indexado en minúsculas y sin espacios para búsqueda exacta tolerante
@@ -268,11 +266,22 @@ document.addEventListener('DOMContentLoaded', function() {
         return '$ ' + Number(num).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     }
 
-    // 2. ACTUALIZACIÓN DEL VENDEDOR EN BASE AL CLIENTE
+    // Redondeo ROUND_HALF_UP exacto idéntico al backend de Django
+    function roundHalfUp(num, decimals = 2) {
+        if (isNaN(num) || num === null || num === undefined) return 0;
+        return Number(Math.round(Number(num + 'e' + decimals)) + 'e-' + decimals);
+    }
+
+    // 2. ACTUALIZACIÓN DEL VENDEDOR EN BASE AL CLIENTE (ESCAPE SEGURO)
     function actualizarVendedor() {
         const opt = selectCliente.options[selectCliente.selectedIndex];
+        vendedorTexto.replaceChildren();
+
         if (!opt || !opt.value) {
-            vendedorTexto.innerHTML = '<i class="bi bi-person me-1"></i> Seleccione un cliente';
+            const icon = document.createElement('i');
+            icon.className = 'bi bi-person me-1';
+            vendedorTexto.appendChild(icon);
+            vendedorTexto.appendChild(document.createTextNode(' Seleccione un cliente'));
             vendedorTexto.className = 'small fw-semibold text-secondary';
             vendedorAlerta.classList.add('d-none');
             return;
@@ -282,11 +291,24 @@ document.addEventListener('DOMContentLoaded', function() {
         const editUrl = opt.dataset.editUrl || '#';
 
         if (vNombre.trim()) {
-            vendedorTexto.innerHTML = `<i class="bi bi-person-check-fill text-success me-1"></i> <span class="text-dark">${vNombre}</span>`;
+            const icon = document.createElement('i');
+            icon.className = 'bi bi-person-check-fill text-success me-1';
+            const span = document.createElement('span');
+            span.className = 'text-dark';
+            span.textContent = vNombre;
+            vendedorTexto.appendChild(icon);
+            vendedorTexto.appendChild(document.createTextNode(' '));
+            vendedorTexto.appendChild(span);
             vendedorTexto.className = 'small fw-semibold text-dark';
             vendedorAlerta.classList.add('d-none');
         } else {
-            vendedorTexto.innerHTML = '<span class="text-danger fw-bold"><i class="bi bi-exclamation-triangle-fill me-1"></i> Sin vendedor asignado</span>';
+            const spanAlert = document.createElement('span');
+            spanAlert.className = 'text-danger fw-bold';
+            const icon = document.createElement('i');
+            icon.className = 'bi bi-exclamation-triangle-fill me-1';
+            spanAlert.appendChild(icon);
+            spanAlert.appendChild(document.createTextNode(' Sin vendedor asignado'));
+            vendedorTexto.appendChild(spanAlert);
             vendedorAlerta.classList.remove('d-none');
             linkEditarCliente.href = editUrl;
         }
@@ -314,6 +336,9 @@ document.addEventListener('DOMContentLoaded', function() {
         tr.className = 'fila-renglon';
         tr.dataset.productoId = '';
         tr.dataset.unitPrice = '0';
+        tr.dataset.bruto = '0';
+        tr.dataset.descuentoMonetario = '0';
+        tr.dataset.totalFila = '0';
         tr.dataset.requestId = '0';
 
         tr.innerHTML = `
@@ -346,7 +371,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 <input type="text" class="form-control form-control-sm text-end bg-light input-precio" placeholder="$ 0,00" readonly tabindex="-1">
             </td>
             <td>
-                <input type="number" step="0.01" min="0" max="100" name="porcentaje_descuento[]" class="form-control form-control-sm text-end input-descuento" placeholder="0.00" value="0.00">
+                <input type="text" inputmode="decimal" name="porcentaje_descuento[]" class="form-control form-control-sm text-end input-descuento" placeholder="0,00" value="0,00">
             </td>
             <td>
                 <input type="text" class="form-control form-control-sm text-end bg-light fw-bold input-total" placeholder="$ 0,00" readonly tabindex="0">
@@ -366,7 +391,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const inputCant = tr.querySelector('.input-cantidad');
             if (datos.cantidad) inputCant.value = datos.cantidad;
             const inputDesc = tr.querySelector('.input-descuento');
-            if (datos.descuento !== undefined) inputDesc.value = datos.descuento;
+            if (datos.descuento !== undefined) inputDesc.value = String(datos.descuento).replace('.', ',');
 
             // Cargar producto
             handleCodigo(tr, false);
@@ -414,8 +439,16 @@ document.addEventListener('DOMContentLoaded', function() {
             mostrarErrorFila(row, `Código "${code}" no encontrado o producto inactivo.`);
             row.dataset.productoId = '';
             row.dataset.unitPrice = '0';
+            row.dataset.bruto = '0';
+            row.dataset.descuentoMonetario = '0';
+            row.dataset.totalFila = '0';
             row.querySelector('.input-producto-id').value = '';
-            row.querySelector('.desc-producto-nombre').innerHTML = '<span class="text-danger fst-italic">Producto no encontrado</span>';
+            const descEl = row.querySelector('.desc-producto-nombre');
+            descEl.replaceChildren();
+            const spanNotFound = document.createElement('span');
+            spanNotFound.className = 'text-danger fst-italic';
+            spanNotFound.textContent = 'Producto no encontrado';
+            descEl.appendChild(spanNotFound);
             row.querySelector('.input-precio').value = '$ 0,00';
             row.querySelector('.input-total').value = '$ 0,00';
             row.querySelector('.stock-badge').textContent = 'Stock: -';
@@ -463,6 +496,9 @@ document.addEventListener('DOMContentLoaded', function() {
             const listaNombre = selectListaPrecio.options[selectListaPrecio.selectedIndex]?.text || 'lista';
             mostrarErrorFila(row, `El producto no tiene precio definido en la ${listaNombre}.`);
             row.dataset.unitPrice = '0';
+            row.dataset.bruto = '0';
+            row.dataset.descuentoMonetario = '0';
+            row.dataset.totalFila = '0';
             row.querySelector('.input-precio').value = '$ 0,00';
             row.querySelector('.input-total').value = '$ 0,00';
             recalcularTotalesGenerales();
@@ -545,7 +581,7 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
 
-        inputDesc.value = descNum.toFixed(2);
+        inputDesc.value = descNum.toFixed(2).replace('.', ',');
         recalcularFila(row);
 
         // Enfocar Total (solo lectura enfocable)
@@ -592,11 +628,11 @@ document.addEventListener('DOMContentLoaded', function() {
         const desc = parseFloat(descStr) || 0;
 
         // Bruto = cantidad * precio unitario
-        const bruto = cant * unitPrice;
-        // Descuento monetario = bruto * porcentaje / 100
-        const descuentoMonetario = Math.round((bruto * (desc / 100)) * 100) / 100;
-        // Total fila = bruto - descuento monetario
-        const totalFila = Math.round((bruto - descuentoMonetario) * 100) / 100;
+        const bruto = roundHalfUp(cant * unitPrice, 2);
+        // Descuento monetario = bruto * porcentaje / 100 (ROUND_HALF_UP exacto)
+        const descuentoMonetario = roundHalfUp(bruto * (desc / 100), 2);
+        // Total fila = bruto - descuento monetario (ROUND_HALF_UP exacto)
+        const totalFila = roundHalfUp(bruto - descuentoMonetario, 2);
 
         row.dataset.bruto = bruto.toFixed(2);
         row.dataset.descuentoMonetario = descuentoMonetario.toFixed(2);
@@ -608,12 +644,41 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function recalcularTodasLasFilas() {
+        const currentListId = selectListaPrecio.value;
         const rows = tbody.querySelectorAll('.fila-renglon');
         rows.forEach(row => {
-            if (row.dataset.productoId) {
-                handleCodigo(row, false);
-                handlePresentacionChange(row);
+            const prodId = row.dataset.productoId;
+            if (!prodId) return;
+
+            const code = row.querySelector('.input-codigo').value.trim();
+            const prod = catalogByCode[code.toUpperCase()];
+            if (!prod) return;
+
+            const basePriceStr = prod.precios[String(currentListId)];
+            if (!basePriceStr) {
+                const listaNombre = selectListaPrecio.options[selectListaPrecio.selectedIndex]?.text || 'lista';
+                mostrarErrorFila(row, `El producto no tiene precio definido en la ${listaNombre}.`);
+                row.dataset.unitPrice = '0';
+                row.dataset.bruto = '0';
+                row.dataset.descuentoMonetario = '0';
+                row.dataset.totalFila = '0';
+                row.querySelector('.input-precio').value = '$ 0,00';
+                row.querySelector('.input-total').value = '$ 0,00';
+                return;
             }
+
+            mostrarErrorFila(row, null);
+
+            // Conservar estrictamente la presentación seleccionada previamente
+            const selectPres = row.querySelector('.select-presentacion');
+            const selectedOpt = selectPres.options[selectPres.selectedIndex];
+            const factor = selectedOpt ? parseInt(selectedOpt.dataset.factor || '1', 10) : 1;
+
+            const unitPrice = parseFloat(basePriceStr) * factor;
+            row.dataset.unitPrice = unitPrice.toFixed(2);
+            row.querySelector('.input-precio').value = formatMoney(unitPrice);
+
+            recalcularFila(row);
         });
         recalcularTotalesGenerales();
     }
@@ -665,7 +730,26 @@ document.addEventListener('DOMContentLoaded', function() {
         const row = target.closest('.fila-renglon');
         if (!row) return;
 
-        if (target.classList.contains('input-cantidad') || target.classList.contains('input-descuento')) {
+        if (target.classList.contains('input-codigo')) {
+            // Invalidar inmediatamente la selección previa al modificar el texto del código
+            row.dataset.productoId = '';
+            row.dataset.unitPrice = '0';
+            row.dataset.bruto = '0';
+            row.dataset.descuentoMonetario = '0';
+            row.dataset.totalFila = '0';
+            row.querySelector('.input-producto-id').value = '';
+            const descEl = row.querySelector('.desc-producto-nombre');
+            descEl.replaceChildren();
+            const spanHint = document.createElement('span');
+            spanHint.className = 'text-muted fst-italic';
+            spanHint.textContent = 'Ingrese código y presione Enter';
+            descEl.appendChild(spanHint);
+            row.querySelector('.stock-badge').textContent = 'Stock: -';
+            row.querySelector('.input-precio').value = '$ 0,00';
+            row.querySelector('.input-total').value = '$ 0,00';
+            mostrarErrorFila(row, null);
+            recalcularTotalesGenerales();
+        } else if (target.classList.contains('input-cantidad') || target.classList.contains('input-descuento')) {
             recalcularFila(row);
         }
     });
@@ -690,14 +774,22 @@ document.addEventListener('DOMContentLoaded', function() {
                 // Si es la única fila, limpiarla en vez de eliminarla
                 row.dataset.productoId = '';
                 row.dataset.unitPrice = '0';
+                row.dataset.bruto = '0';
+                row.dataset.descuentoMonetario = '0';
+                row.dataset.totalFila = '0';
                 row.querySelector('.input-codigo').value = '';
                 row.querySelector('.input-producto-id').value = '';
-                row.querySelector('.desc-producto-nombre').innerHTML = '<span class="text-muted fst-italic">Ingrese código y presione Enter</span>';
+                const descEl = row.querySelector('.desc-producto-nombre');
+                descEl.replaceChildren();
+                const spanInit = document.createElement('span');
+                spanInit.className = 'text-muted fst-italic';
+                spanInit.textContent = 'Ingrese código y presione Enter';
+                descEl.appendChild(spanInit);
                 row.querySelector('.select-presentacion').innerHTML = '<option value="">Unidad Base (x1)</option>';
                 row.querySelector('.stock-badge').textContent = 'Stock: -';
                 row.querySelector('.input-cantidad').value = '1';
                 row.querySelector('.input-precio').value = '$ 0,00';
-                row.querySelector('.input-descuento').value = '0.00';
+                row.querySelector('.input-descuento').value = '0,00';
                 row.querySelector('.input-total').value = '$ 0,00';
                 mostrarErrorFila(row, null);
             }
@@ -740,34 +832,67 @@ document.addEventListener('DOMContentLoaded', function() {
     function renderModalCatalog(query = '') {
         const q = query.toLowerCase().trim();
         const currentListId = selectListaPrecio.value;
-        tbodyModal.innerHTML = '';
+        tbodyModal.replaceChildren();
 
         const filtrados = catalogArray.filter(p => {
             if (!q) return true;
-            return p.codigo.toLowerCase().includes(q) ||
-                   p.nombre.toLowerCase().includes(q) ||
-                   p.categoria.toLowerCase().includes(q) ||
-                   p.marca.toLowerCase().includes(q);
+            return (p.codigo && p.codigo.toLowerCase().includes(q)) ||
+                   (p.nombre && p.nombre.toLowerCase().includes(q)) ||
+                   (p.categoria && p.categoria.toLowerCase().includes(q)) ||
+                   (p.marca && p.marca.toLowerCase().includes(q));
         }).slice(0, 50); // Primeros 50 resultados para máxima fluidez
 
         if (filtrados.length === 0) {
-            tbodyModal.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-3">No se encontraron productos coincidentes.</td></tr>';
+            const trEmpty = document.createElement('tr');
+            const tdEmpty = document.createElement('td');
+            tdEmpty.colSpan = 5;
+            tdEmpty.className = 'text-center text-muted py-3';
+            tdEmpty.textContent = 'No se encontraron productos coincidentes.';
+            trEmpty.appendChild(tdEmpty);
+            tbodyModal.appendChild(trEmpty);
             return;
         }
 
         filtrados.forEach(p => {
             const tr = document.createElement('tr');
             tr.style.cursor = 'pointer';
-            const price = p.precios[String(currentListId)];
-            const priceDisplay = price ? formatMoney(price) : '<span class="text-danger small">Sin precio</span>';
 
-            tr.innerHTML = `
-                <td class="font-monospace fw-bold text-primary">${p.codigo}</td>
-                <td class="fw-semibold text-dark">${p.nombre}</td>
-                <td class="text-muted small">${p.categoria || '-'} / ${p.marca || '-'}</td>
-                <td class="text-center"><span class="badge ${p.stock > 0 ? 'bg-success-subtle text-success' : 'bg-danger-subtle text-danger'} border">${p.stock}</span></td>
-                <td class="text-end font-monospace">${priceDisplay}</td>
-            `;
+            const tdCod = document.createElement('td');
+            tdCod.className = 'font-monospace fw-bold text-primary';
+            tdCod.textContent = p.codigo;
+
+            const tdNom = document.createElement('td');
+            tdNom.className = 'fw-semibold text-dark';
+            tdNom.textContent = p.nombre;
+
+            const tdCat = document.createElement('td');
+            tdCat.className = 'text-muted small';
+            tdCat.textContent = `${p.categoria || '-'} / ${p.marca || '-'}`;
+
+            const tdStock = document.createElement('td');
+            tdStock.className = 'text-center';
+            const badgeStock = document.createElement('span');
+            badgeStock.className = `badge ${p.stock > 0 ? 'bg-success-subtle text-success' : 'bg-danger-subtle text-danger'} border`;
+            badgeStock.textContent = String(p.stock);
+            tdStock.appendChild(badgeStock);
+
+            const tdPrice = document.createElement('td');
+            tdPrice.className = 'text-end font-monospace';
+            const price = p.precios[String(currentListId)];
+            if (price) {
+                tdPrice.textContent = formatMoney(price);
+            } else {
+                const spanSinPrecio = document.createElement('span');
+                spanSinPrecio.className = 'text-danger small';
+                spanSinPrecio.textContent = 'Sin precio';
+                tdPrice.appendChild(spanSinPrecio);
+            }
+
+            tr.appendChild(tdCod);
+            tr.appendChild(tdNom);
+            tr.appendChild(tdCat);
+            tr.appendChild(tdStock);
+            tr.appendChild(tdPrice);
 
             tr.addEventListener('click', function() {
                 seleccionarProductoDesdeModal(p.codigo);
@@ -805,9 +930,79 @@ document.addEventListener('DOMContentLoaded', function() {
         handleCodigo(rowSearchTarget, true);
     }
 
-    // 9. PREVENIR DOBLE ENVÍO Y VALIDAR ANTES DE EMITIR
+    // 9. VALIDAR TODAS LAS FILAS ANTES DE EMITIR Y PREVENIR DOBLE ENVÍO
     formRemito.addEventListener('submit', function(e) {
-        // Evitar que el botón emita dos veces
+        const rows = tbody.querySelectorAll('.fila-renglon');
+        let validProductRowsCount = 0;
+        let hasErrors = false;
+
+        for (let i = 0; i < rows.length; i++) {
+            const row = rows[i];
+            const codigo = row.querySelector('.input-codigo').value.trim();
+            const prodId = row.dataset.productoId;
+            const cantStr = row.querySelector('.input-cantidad').value.trim().replace(',', '.');
+            const descStr = row.querySelector('.input-descuento').value.trim().replace(',', '.');
+            const unitPrice = parseFloat(row.dataset.unitPrice || '0');
+
+            const isInitialEmpty = (
+                !codigo && !prodId &&
+                (cantStr === '' || cantStr === '1') &&
+                (descStr === '' || descStr === '0' || descStr === '0.00' || descStr === '0,00')
+            );
+
+            if (isInitialEmpty) {
+                // Fila vacía generada automáticamente -> ignorar sin bloquear
+                continue;
+            }
+
+            // Fila con datos parciales o modificados -> validar exhaustivamente
+            if (!prodId || !codigo) {
+                mostrarErrorFila(row, `Renglón #${i + 1}: Ingrese el código y presione Enter para seleccionar el producto.`);
+                row.querySelector('.input-codigo').focus();
+                hasErrors = true;
+                break;
+            }
+
+            if (unitPrice <= 0) {
+                mostrarErrorFila(row, `Renglón #${i + 1}: El producto no cuenta con precio en la lista seleccionada.`);
+                row.querySelector('.input-codigo').focus();
+                hasErrors = true;
+                break;
+            }
+
+            const cantNum = Number(cantStr);
+            if (!cantStr || isNaN(cantNum) || cantNum <= 0 || !Number.isInteger(cantNum)) {
+                mostrarErrorFila(row, `Renglón #${i + 1}: La cantidad debe ser un número entero mayor a 0.`);
+                row.querySelector('.input-cantidad').focus();
+                hasErrors = true;
+                break;
+            }
+
+            const descNum = Number(descStr || '0');
+            if (isNaN(descNum) || descNum < 0 || descNum > 100) {
+                mostrarErrorFila(row, `Renglón #${i + 1}: El porcentaje de descuento debe estar entre 0 y 100%.`);
+                row.querySelector('.input-descuento').focus();
+                hasErrors = true;
+                break;
+            }
+
+            validProductRowsCount++;
+        }
+
+        if (hasErrors) {
+            e.preventDefault();
+            return;
+        }
+
+        if (validProductRowsCount === 0) {
+            e.preventDefault();
+            alert("Debe cargar al menos un producto válido para emitir el remito.");
+            const firstRow = rows[0];
+            if (firstRow) firstRow.querySelector('.input-codigo').focus();
+            return;
+        }
+
+        // Si pasó todas las validaciones, proteger contra doble envío
         btnEmitir.disabled = true;
         btnEmitir.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span> Emitiendo remito...';
     });

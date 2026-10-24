@@ -11,6 +11,7 @@ from django.http import HttpResponseForbidden, HttpResponseBadRequest, HttpRespo
 from django.db import models
 from django.db.models import Q, F, Sum
 from django.utils import timezone
+from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 from django.urls import reverse
 from django.core.paginator import Paginator
@@ -279,7 +280,7 @@ def _get_remito_directo_context(cliente_id=None, tipo_lista_precio_id=None, fech
         'fecha_seleccionada': fecha_hoy,
         'observaciones': observaciones or '',
         'filas_recargadas': filas or [],
-        'catalog_data_json': json.dumps(catalog_data),
+        'catalog_data': catalog_data,
         'catalog_list': list(catalog_data.values()),
     }
 
@@ -333,23 +334,21 @@ class VentaDirectaRemitoView(View):
             edit_url = reverse('gestion:cliente_editar', args=[cliente.id])
             messages.error(
                 request,
-                mark_safe(
-                    f"El cliente <strong>{cliente.razon_social}</strong> no tiene un vendedor asignado. "
-                    f"Debe asignarle un vendedor para poder emitir el remito. "
-                    f"<a href='{edit_url}' class='alert-link fw-bold' target='_blank'>Haga clic aquí para editar la ficha del cliente</a>."
+                format_html(
+                    "El cliente <strong>{}</strong> no tiene un vendedor asignado. "
+                    "Debe asignarle un vendedor para poder emitir el remito. "
+                    "<a href='{}' class='alert-link fw-bold' target='_blank'>Haga clic aquí para editar la ficha del cliente</a>.",
+                    cliente.razon_social,
+                    edit_url
                 )
             )
 
-        # 3. Validación de Lista de Precios
+        # 3. Validación de Lista de Precios (Estricta y Exclusiva: no sustituir silenciosamente)
         tipo_lista = None
         if tipo_lista_precio_id and str(tipo_lista_precio_id).isdigit():
             tipo_lista = TipoListaPrecio.objects.filter(id=int(tipo_lista_precio_id), activa=True).first()
-        elif not tipo_lista_precio_id and cliente and getattr(cliente, 'tipo_lista_precio', None):
-            # Compatibilidad con solicitudes legacy que no envían selector de lista
-            tipo_lista = cliente.tipo_lista_precio
 
-        precios_explicit = [p.strip() for p in precios if p and p.strip()]
-        if not tipo_lista and not precios_explicit:
+        if not tipo_lista:
             messages.error(request, "Debe seleccionar una lista de precios activa válida.")
 
         # 4. Procesar y validar renglones
@@ -359,10 +358,15 @@ class VentaDirectaRemitoView(View):
             pres_id_val = pres_ids[idx].strip() if idx < len(pres_ids) else ''
             cant_val = cantidades[idx].strip() if idx < len(cantidades) else ''
             desc_val = descuentos[idx].strip() if idx < len(descuentos) else ''
-            precio_val = precios[idx].strip() if idx < len(precios) else ''
 
-            # Fila completamente vacía -> no impide emitir
-            if not codigo_val and not p_id_val and not cant_val and (not desc_val or desc_val in ('0', '0.00')):
+            # Fila vacía con valores iniciales por defecto -> ignorar consistentemente sin bloquear
+            is_empty_initial = (
+                not codigo_val
+                and not p_id_val
+                and cant_val in ('', '1')
+                and (not desc_val or desc_val.replace(',', '.') in ('0', '0.0', '0.00'))
+            )
+            if is_empty_initial:
                 continue
 
             fila_dict = {
@@ -374,26 +378,53 @@ class VentaDirectaRemitoView(View):
             }
             filas_recargadas.append(fila_dict)
 
-            # Fila incompleta con datos
+            # Fila incompleta sin producto ni código
             if not p_id_val and not codigo_val:
                 errores_filas.append(f"Renglón #{idx+1}: Incompleto. Ingrese el código del producto.")
                 continue
 
-            producto = None
+            # Resolución y coherencia estricta entre código e ID
+            prod_by_code = None
+            if codigo_val:
+                prod_by_code = Producto.objects.filter(codigo__iexact=codigo_val, activo=True).first()
+
+            prod_by_id = None
             if p_id_val and p_id_val.isdigit():
-                producto = Producto.objects.filter(id=int(p_id_val), activo=True).first()
-            elif codigo_val:
-                producto = Producto.objects.filter(codigo__iexact=codigo_val, activo=True).first()
+                prod_by_id = Producto.objects.filter(id=int(p_id_val), activo=True).first()
+
+            if codigo_val and p_id_val:
+                if not prod_by_code or not prod_by_id or prod_by_code.id != prod_by_id.id:
+                    errores_filas.append(
+                        f"Renglón #{idx+1}: Incoherencia entre el código '{codigo_val}' y el producto seleccionado."
+                    )
+                    continue
+                producto = prod_by_code
+            elif prod_by_code:
+                producto = prod_by_code
+            elif prod_by_id:
+                producto = prod_by_id
+            else:
+                errores_filas.append(f"Renglón #{idx+1}: El producto con código '{codigo_val}' no existe o se encuentra inactivo.")
+                continue
 
             if not producto:
                 errores_filas.append(f"Renglón #{idx+1}: El producto con código '{codigo_val}' no existe o se encuentra inactivo.")
                 continue
 
+            # Validación de Presentación: rechazar si no existe o no pertenece al producto
             presentacion = None
-            if pres_id_val and pres_id_val.isdigit():
+            factor_unidades = 1
+            if pres_id_val and pres_id_val.strip():
+                if not pres_id_val.isdigit():
+                    errores_filas.append(f"Renglón #{idx+1} ({producto.nombre}): Identificador de presentación inválido.")
+                    continue
                 presentacion = Presentacion.objects.filter(id=int(pres_id_val), producto=producto).first()
-
-            factor_unidades = int(presentacion.factor_conversion) if presentacion else 1
+                if not presentacion:
+                    errores_filas.append(
+                        f"Renglón #{idx+1} ({producto.nombre}): La presentación especificada no existe o no pertenece a este producto."
+                    )
+                    continue
+                factor_unidades = int(presentacion.factor_conversion)
 
             if not cant_val:
                 errores_filas.append(f"Renglón #{idx+1} ({producto.nombre}): Debe ingresar una cantidad.")
@@ -429,38 +460,21 @@ class VentaDirectaRemitoView(View):
                 errores_filas.append(f"Renglón #{idx+1} ({producto.nombre}): El descuento ({desc_dec}%) debe estar entre 0 y 100.")
                 continue
 
-            # Resolución del precio: si se envió tipo_lista_precio_id, resolver estrictamente en servidor
-            if tipo_lista_precio_id and tipo_lista:
-                precio_lista = PrecioProducto.objects.filter(producto=producto, tipo_lista=tipo_lista).first()
-                if not precio_lista:
-                    errores_filas.append(
-                        f"Renglón #{idx+1}: El producto '{producto.nombre}' [{producto.codigo}] no tiene precio definido en la lista '{tipo_lista.nombre}'."
-                    )
-                    continue
-
-                precio_unitario = (precio_lista.precio_final * Decimal(factor_unidades)).quantize(
-                    Decimal('0.01'), rounding=ROUND_HALF_UP
-                )
-            elif precio_val:
-                # Compatibilidad con solicitudes legacy de prueba que envían precio explícito
-                try:
-                    precio_unitario = Decimal(str(precio_val).replace(',', '.')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-                except Exception:
-                    errores_filas.append(f"Renglón #{idx+1}: Precio unitario inválido '{precio_val}'.")
-                    continue
-            elif tipo_lista:
-                precio_lista = PrecioProducto.objects.filter(producto=producto, tipo_lista=tipo_lista).first()
-                if not precio_lista:
-                    errores_filas.append(
-                        f"Renglón #{idx+1}: El producto '{producto.nombre}' [{producto.codigo}] no tiene precio definido en la lista '{tipo_lista.nombre}'."
-                    )
-                    continue
-                precio_unitario = (precio_lista.precio_final * Decimal(factor_unidades)).quantize(
-                    Decimal('0.01'), rounding=ROUND_HALF_UP
-                )
-            else:
-                errores_filas.append(f"Renglón #{idx+1}: Debe seleccionar una lista de precios para resolver el precio.")
+            # Resolución de precio: Exclusivamente resuelto en el servidor desde la lista de precios activa
+            if not tipo_lista:
+                errores_filas.append(f"Renglón #{idx+1}: Debe seleccionar una lista de precios activa para resolver el precio.")
                 continue
+
+            precio_lista = PrecioProducto.objects.filter(producto=producto, tipo_lista=tipo_lista).first()
+            if not precio_lista:
+                errores_filas.append(
+                    f"Renglón #{idx+1}: El producto '{producto.nombre}' [{producto.codigo}] no tiene precio definido en la lista '{tipo_lista.nombre}'."
+                )
+                continue
+
+            precio_unitario = (precio_lista.precio_final * Decimal(factor_unidades)).quantize(
+                Decimal('0.01'), rounding=ROUND_HALF_UP
+            )
 
             items_data.append({
                 'producto': producto,

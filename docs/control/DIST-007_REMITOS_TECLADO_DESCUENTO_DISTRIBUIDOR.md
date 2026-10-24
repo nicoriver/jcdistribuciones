@@ -180,7 +180,7 @@ Para desplegar estos cambios en el servidor de producción (VPS):
    ```bash
    python manage.py migrate
    ```
-   *(Aplica `productos 0005` y `comprobantes 0005` sin downtime ni bloqueo de tablas).*
+   *(Aplica `productos 0005` y `comprobantes 0005`. Nota técnica: no se garantiza a priori la ausencia total de bloqueos de tabla (ACCESS EXCLUSIVE locks transitorios en PostgreSQL durante `ALTER TABLE`) ni cero downtime en producción sin la debida comprobación bajo la carga y volumen real del motor).*
 3. **Ejecutar verificación de consistencia del sistema:**
    ```bash
    python manage.py check

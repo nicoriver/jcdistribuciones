@@ -603,3 +603,236 @@ class RemitoTecladoDescuentoDistribuidorTestCase(TestCase):
 
         # Correlativo numerado secuencial
         self.assertEqual(remito_pedido.numero, remito_directo.numero + 1)
+
+    # --------------------------------------------------------------------------
+    # 11. DIST-007A: Fila vacía inicial se ignora y emite 1 solo detalle
+    # --------------------------------------------------------------------------
+    def test_dist007a_fila_final_vacia_con_valores_iniciales_se_ignora(self):
+        """
+        DIST-007A (Punto 1):
+        crearFila() inicia cantidad=1 y descuento=0.00.
+        Una fila final sin producto ni código y con valores iniciales debe ser ignorada
+        consistentemente como fila vacía, emitiendo un solo detalle.
+        """
+        self.client.force_login(self.supervisor)
+        url = reverse('gestion:remito_directo')
+
+        post_data = {
+            'cliente_id': self.cliente_con_vendedor.id,
+            'tipo_lista_precio_id': self.lista_minorista.id,
+            'fecha': '2026-10-24',
+            # Fila 1: Producto válido; Fila 2: Fila final vacía con valores iniciales por defecto
+            'codigo[]': ['00100', ''],
+            'producto_id[]': [str(self.prod_1.id), ''],
+            'presentacion_id[]': [str(self.pres_base_1.id), ''],
+            'cantidad[]': ['3', '1'],
+            'porcentaje_descuento[]': ['0.00', '0.00'],
+        }
+        resp = self.client.post(url, post_data)
+        self.assertEqual(resp.status_code, 302)
+
+        remito = Remito.objects.latest('id')
+        self.assertEqual(remito.detalles.count(), 1)
+        det = remito.detalles.first()
+        self.assertEqual(det.producto, self.prod_1)
+        self.assertEqual(det.cantidad, 3)
+
+    # --------------------------------------------------------------------------
+    # 12. DIST-007A: Precios exclusivamente del server y lista obligatoria
+    # --------------------------------------------------------------------------
+    def test_dist007a_precios_exclusivamente_del_servidor_y_rechazo_lista_ausente_invalida(self):
+        """
+        DIST-007A (Punto 2):
+        - Intento de enviar precios manipulados por POST es ignorado; se resuelve estrictamente del server.
+        - Exige lista activa válida. Si falta o es inválida, se rechaza y no se sustituye silenciosamente.
+        """
+        self.client.force_login(self.supervisor)
+        url = reverse('gestion:remito_directo')
+
+        # Caso A: Precio manipulado en POST ($1.00 en vez de $1000.00 de lista)
+        post_manipulado = {
+            'cliente_id': self.cliente_con_vendedor.id,
+            'tipo_lista_precio_id': self.lista_minorista.id,
+            'fecha': '2026-10-24',
+            'codigo[]': ['00100'],
+            'producto_id[]': [str(self.prod_1.id)],
+            'cantidad[]': ['2'],
+            'porcentaje_descuento[]': ['0.00'],
+            'precio_unitario[]': ['1.00'],  # Manipulación maliciosa
+        }
+        resp_a = self.client.post(url, post_manipulado)
+        self.assertEqual(resp_a.status_code, 302)
+        remito_a = Remito.objects.latest('id')
+        det_a = remito_a.detalles.first()
+        # Debe haber tomado el precio oficial del servidor ($1000.00) ignorando el $1.00
+        self.assertEqual(det_a.precio_unitario_historico, Decimal('1000.00'))
+        self.assertEqual(remito_a.monto_total, Decimal('2000.00'))
+
+        # Caso B: Lista ausente (no debe sustituir por la del cliente)
+        count_antes = Remito.objects.count()
+        post_sin_lista = {
+            'cliente_id': self.cliente_con_vendedor.id,
+            'tipo_lista_precio_id': '',  # Ausente
+            'codigo[]': ['00100'],
+            'producto_id[]': [str(self.prod_1.id)],
+            'cantidad[]': ['1'],
+            'porcentaje_descuento[]': ['0.00'],
+        }
+        resp_b = self.client.post(url, post_sin_lista)
+        self.assertEqual(resp_b.status_code, 200)
+        self.assertContains(resp_b, "Debe seleccionar una lista de precios activa válida.")
+        self.assertEqual(Remito.objects.count(), count_antes)
+
+        # Caso C: Lista inválida / inexistente
+        post_lista_invalida = {
+            'cliente_id': self.cliente_con_vendedor.id,
+            'tipo_lista_precio_id': '999999',  # Inexistente
+            'codigo[]': ['00100'],
+            'producto_id[]': [str(self.prod_1.id)],
+            'cantidad[]': ['1'],
+            'porcentaje_descuento[]': ['0.00'],
+        }
+        resp_c = self.client.post(url, post_lista_invalida)
+        self.assertEqual(resp_c.status_code, 200)
+        self.assertContains(resp_c, "Debe seleccionar una lista de precios activa válida.")
+        self.assertEqual(Remito.objects.count(), count_antes)
+
+    # --------------------------------------------------------------------------
+    # 13. DIST-007A: Coherencia código/producto y rechazo presentación inválida
+    # --------------------------------------------------------------------------
+    def test_dist007a_coherencia_codigo_producto_y_rechazo_presentacion_invalida(self):
+        """
+        DIST-007A (Punto 3):
+        - Si código e ID difieren, el backend rechaza la incoherencia.
+        - Si se envía presentación inexistente o de otro producto, rechaza en vez de convertir a base.
+        """
+        self.client.force_login(self.supervisor)
+        url = reverse('gestion:remito_directo')
+        count_antes = Remito.objects.count()
+
+        # Caso A: Código de prod_1 pero producto_id de prod_2
+        post_incoherente = {
+            'cliente_id': self.cliente_con_vendedor.id,
+            'tipo_lista_precio_id': self.lista_minorista.id,
+            'codigo[]': [self.prod_1.codigo],
+            'producto_id[]': [str(self.prod_2.id)],
+            'cantidad[]': ['1'],
+            'porcentaje_descuento[]': ['0.00'],
+        }
+        resp_a = self.client.post(url, post_incoherente)
+        self.assertEqual(resp_a.status_code, 200)
+        self.assertContains(resp_a, "Incoherencia entre el código")
+        self.assertEqual(Remito.objects.count(), count_antes)
+
+        # Caso B: Presentación de otro producto (pres_pack_2 enviada en renglón de prod_1)
+        post_pres_ajena = {
+            'cliente_id': self.cliente_con_vendedor.id,
+            'tipo_lista_precio_id': self.lista_minorista.id,
+            'codigo[]': [self.prod_1.codigo],
+            'producto_id[]': [str(self.prod_1.id)],
+            'presentacion_id[]': [str(self.pres_pack_2.id)],  # Pertenece a prod_2, NO a prod_1
+            'cantidad[]': ['1'],
+            'porcentaje_descuento[]': ['0.00'],
+        }
+        resp_b = self.client.post(url, post_pres_ajena)
+        self.assertEqual(resp_b.status_code, 200)
+        self.assertContains(resp_b, "no existe o no pertenece a este producto")
+        self.assertEqual(Remito.objects.count(), count_antes)
+
+    # --------------------------------------------------------------------------
+    # 14. DIST-007A: Presentación alternativa con factor > 1
+    # --------------------------------------------------------------------------
+    def test_dist007a_presentacion_alternativa_factor_mayor_a_uno(self):
+        """
+        DIST-007A (Punto 3):
+        Prueba con presentación alternativa y factor mayor a uno (Pack x6 de Agua Mineral 2L).
+        Precio base = 2000.00 -> Precio pack = 12000.00.
+        Cantidad = 2 packs -> Subtotal = 24000.00, descuento stock = 12 unidades.
+        """
+        self.client.force_login(self.supervisor)
+        url = reverse('gestion:remito_directo')
+        stock_inicial_2 = self.prod_2.stock_actual
+
+        post_data = {
+            'cliente_id': self.cliente_con_vendedor.id,
+            'tipo_lista_precio_id': self.lista_minorista.id,
+            'codigo[]': [self.prod_2.codigo],
+            'producto_id[]': [str(self.prod_2.id)],
+            'presentacion_id[]': [str(self.pres_pack_2.id)],  # Factor 6
+            'cantidad[]': ['2'],
+            'porcentaje_descuento[]': ['0.00'],
+        }
+        resp = self.client.post(url, post_data)
+        self.assertEqual(resp.status_code, 302)
+
+        remito = Remito.objects.latest('id')
+        detalle = remito.detalles.first()
+        self.assertEqual(detalle.presentacion, self.pres_pack_2)
+        self.assertEqual(detalle.factor_unidades, 6)
+        self.assertEqual(detalle.precio_unitario_historico, Decimal('12000.00'))
+        self.assertEqual(detalle.subtotal, Decimal('24000.00'))
+
+        self.prod_2.refresh_from_db()
+        self.assertEqual(self.prod_2.stock_actual, stock_inicial_2 - 12)
+
+    # --------------------------------------------------------------------------
+    # 15. DIST-007A: Escape seguro de datos HTML y caracteres especiales
+    # --------------------------------------------------------------------------
+    def test_dist007a_escape_seguro_caracteres_especiales_html(self):
+        """
+        DIST-007A (Punto 5):
+        Escape seguro de datos con json_script y format_html:
+        Verifica que productos y clientes con caracteres especiales y HTML
+        (ej: <script>, <b>, &, ", ') se serialicen y escapen sin vulnerabilidades XSS.
+        """
+        self.client.force_login(self.supervisor)
+        url = reverse('gestion:remito_directo')
+
+        # Crear producto con contenido semejante a HTML y comillas
+        prod_xss = Producto.objects.create(
+            codigo='XSS-001',
+            nombre='Alfajor <script>alert("xss")</script> & "Especial"',
+            categoria=self.categoria,
+            marca=self.marca,
+            costo_base=Decimal('100.00'),
+            stock_actual=50,
+            activo=True
+        )
+        PrecioProducto.objects.create(
+            producto=prod_xss,
+            tipo_lista=self.lista_minorista,
+            precio_final=Decimal('150.00')
+        )
+
+        resp_get = self.client.get(url)
+        self.assertEqual(resp_get.status_code, 200)
+        # El script json_script no debe contener el tag <script> sin escapar
+        content = resp_get.content.decode('utf-8')
+        self.assertIn('catalogDataScript', content)
+        self.assertNotIn('<script>alert("xss")</script>', content)
+        self.assertIn(r'\u003Cscript\u003Ealert(\"xss\")\u003C/script\u003E', content)
+
+        # Crear cliente sin vendedor con caracteres especiales y HTML en razón social
+        cliente_xss = Cliente.objects.create(
+            cuit='30333333334',
+            razon_social='Supermercado <img src=x onerror=alert(1)> & "Amigo"',
+            zona=self.zona,
+            localidad=self.localidad,
+            vendedor=None,
+            tipo_lista_precio=self.lista_minorista,
+            activo=True
+        )
+
+        post_data = {
+            'cliente_id': cliente_xss.id,
+            'tipo_lista_precio_id': self.lista_minorista.id,
+            'codigo[]': ['XSS-001'],
+            'producto_id[]': [str(prod_xss.id)],
+            'cantidad[]': ['1'],
+            'porcentaje_descuento[]': ['0.00'],
+        }
+        resp_post = self.client.post(url, post_data)
+        self.assertEqual(resp_post.status_code, 200)
+        # format_html debe haber escapado adecuadamente el nombre del cliente
+        self.assertContains(resp_post, '&lt;img src=x onerror=alert(1)&gt; &amp; &quot;Amigo&quot;')
+        self.assertNotContains(resp_post, '<img src=x onerror=alert(1)>')
