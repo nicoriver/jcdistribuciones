@@ -315,14 +315,15 @@ class RemitoTecladoDescuentoDistribuidorTestCase(TestCase):
         self.assertEqual(remito.fecha_comercial, fecha_elegida)
         # La fecha y hora de auditoría se mantiene separada y no sobreescrita
         self.assertIsNotNone(remito.fecha_emision)
-        self.assertEqual(remito.fecha_emision.date(), date.today())
+        from django.utils import timezone
+        self.assertEqual(timezone.localtime(remito.fecha_emision).date(), timezone.localdate())
 
         # Compatibilidad retroactiva: remito histórico con fecha=None
         remito.fecha = None
         remito.save(update_fields=['fecha'])
         remito.refresh_from_db()
         self.assertIsNone(remito.fecha)
-        self.assertEqual(remito.fecha_comercial, remito.fecha_emision.date())
+        self.assertEqual(remito.fecha_comercial, timezone.localtime(remito.fecha_emision).date())
 
     # --------------------------------------------------------------------------
     # 4. Vendedor obtenido del cliente y rechazo de manipulación en POST
@@ -353,31 +354,61 @@ class RemitoTecladoDescuentoDistribuidorTestCase(TestCase):
         self.assertNotEqual(remito.vendedor, self.vendedor_b)
 
     # --------------------------------------------------------------------------
-    # 5. Cliente sin vendedor con mensaje controlado (sin error 500)
+    # 5. Cliente sin vendedor emite remito exitosamente (asociación opcional)
     # --------------------------------------------------------------------------
-    def test_cliente_sin_vendedor_con_mensaje_controlado(self):
+    def test_cliente_sin_vendedor_emite_remito_exitosamente(self):
+        """
+        Regla de negocio:
+        La asociación cliente-vendedor es opcional. Un cliente sin vendedor debe poder emitir remitos.
+        - 'Vendedor Responsable' y avisos de asignar vendedor fueron removidos de la interfaz.
+        - El remito conserva vendedor=None sin sustituirlo por el supervisor que lo emite.
+        - Stock, descuentos, fecha y lista de precios se calculan y descuentan correctamente.
+        - La impresión y listados funcionan correctamente mostrando 'Sin vendedor'.
+        """
         self.client.force_login(self.supervisor)
         url = reverse('gestion:remito_directo')
 
+        # Verificar que el formulario no muestre Vendedor Responsable ni botón Asignar
+        resp_get = self.client.get(url)
+        self.assertEqual(resp_get.status_code, 200)
+        self.assertNotContains(resp_get, "Vendedor Responsable")
+        self.assertNotContains(resp_get, "Sin vendedor asignado")
+
+        stock_inicial = self.prod_1.stock_actual
+        fecha_comercial = '2026-10-25'
         post_data = {
             'cliente_id': self.cliente_sin_vendedor.id,
             'tipo_lista_precio_id': self.lista_minorista.id,
-            'fecha': '2026-10-24',
+            'fecha': fecha_comercial,
             'codigo[]': ['00100'],
             'producto_id[]': [self.prod_1.id],
             'cantidad[]': ['2'],
-            'porcentaje_descuento[]': ['0.00'],
+            'porcentaje_descuento[]': ['10.00'],
         }
         resp = self.client.post(url, post_data)
-        # No debe arrojar error 500, debe responder HTTP 200 re-renderizando con mensaje claro
-        self.assertEqual(resp.status_code, 200)
-        self.assertContains(resp, "no tiene un vendedor asignado")
-        # Debe contener enlace autorizado a editar el cliente
-        edit_url = reverse('gestion:cliente_editar', args=[self.cliente_sin_vendedor.id])
-        self.assertContains(resp, edit_url)
+        self.assertEqual(resp.status_code, 302)
 
-        # No se debe haber creado ningún remito
-        self.assertFalse(Remito.objects.filter(cliente=self.cliente_sin_vendedor).exists())
+        remito = Remito.objects.latest('id')
+        self.assertEqual(remito.cliente, self.cliente_sin_vendedor)
+        # Vendedor debe ser None (no sustituido por el supervisor)
+        self.assertIsNone(remito.vendedor)
+        self.assertEqual(remito.supervisor, self.supervisor)
+        self.assertNotEqual(remito.vendedor, self.supervisor)
+
+        # Stock, descuentos, fecha y lista de precios
+        self.prod_1.refresh_from_db()
+        self.assertEqual(self.prod_1.stock_actual, stock_inicial - 2)
+        self.assertEqual(str(remito.fecha), fecha_comercial)
+        self.assertEqual(remito.tipo_lista_precio, self.lista_minorista)
+        self.assertEqual(remito.subtotal_bruto, Decimal('2000.00'))
+        self.assertEqual(remito.total_descuento, Decimal('200.00'))
+        self.assertEqual(remito.monto_total, Decimal('1800.00'))
+
+        # Vista de impresión A4 funciona con vendedor vacío
+        resp_print = self.client.get(reverse('comprobantes:imprimir_remito', args=[remito.id]))
+        self.assertEqual(resp_print.status_code, 200)
+        self.assertContains(resp_print, "Sin vendedor")
+        self.assertContains(resp_print, "1800,00")
 
     # --------------------------------------------------------------------------
     # 6. Minorista predeterminada y selección de otra lista activa
@@ -823,6 +854,13 @@ class RemitoTecladoDescuentoDistribuidorTestCase(TestCase):
             activo=True
         )
 
+        # En el selector de clientes, la razón social con caracteres especiales y HTML debe escaparse
+        resp_get_xss = self.client.get(url)
+        self.assertEqual(resp_get_xss.status_code, 200)
+        self.assertContains(resp_get_xss, '&lt;img src=x onerror=alert(1)&gt; &amp; &quot;Amigo&quot;')
+        self.assertNotContains(resp_get_xss, '<img src=x onerror=alert(1)>')
+
+        # Y al emitir el remito con cliente_xss (sin vendedor), la impresión debe escapar el nombre del cliente
         post_data = {
             'cliente_id': cliente_xss.id,
             'tipo_lista_precio_id': self.lista_minorista.id,
@@ -832,7 +870,9 @@ class RemitoTecladoDescuentoDistribuidorTestCase(TestCase):
             'porcentaje_descuento[]': ['0.00'],
         }
         resp_post = self.client.post(url, post_data)
-        self.assertEqual(resp_post.status_code, 200)
-        # format_html debe haber escapado adecuadamente el nombre del cliente
-        self.assertContains(resp_post, '&lt;img src=x onerror=alert(1)&gt; &amp; &quot;Amigo&quot;')
-        self.assertNotContains(resp_post, '<img src=x onerror=alert(1)>')
+        self.assertEqual(resp_post.status_code, 302)
+        remito_xss = Remito.objects.latest('id')
+        resp_print = self.client.get(reverse('comprobantes:imprimir_remito', args=[remito_xss.id]))
+        self.assertEqual(resp_print.status_code, 200)
+        self.assertContains(resp_print, '&lt;img src=x onerror=alert(1)&gt; &amp; &quot;Amigo&quot;')
+        self.assertNotContains(resp_print, '<img src=x onerror=alert(1)>')

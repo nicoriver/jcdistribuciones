@@ -63,6 +63,8 @@ class Remito(models.Model):
     vendedor = models.ForeignKey(
         'clientes.Vendedor',
         on_delete=models.PROTECT,
+        null=True,
+        blank=True,
         related_name='remitos',
         verbose_name="Vendedor"
     )
@@ -164,7 +166,12 @@ class Remito(models.Model):
     # Propiedades de compatibilidad
     @property
     def fecha_comercial(self):
-        return self.fecha or self.fecha_emision.date()
+        if self.fecha:
+            return self.fecha
+        if self.fecha_emision:
+            from django.utils import timezone
+            return timezone.localtime(self.fecha_emision).date()
+        return None
 
     @property
     def numero_remito(self):

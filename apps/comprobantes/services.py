@@ -52,13 +52,8 @@ class RemitoService:
         if not cliente:
             raise ValidationError("Debe especificar un cliente válido para emitir el remito.")
 
-        # Vendedor: obtenido del cliente obligatoriamente para garantizar integridad
+        # Vendedor: obtenido de la ficha del cliente cuando exista, permitido vacío cuando no exista
         vendedor = getattr(cliente, 'vendedor', None)
-        if not vendedor:
-            raise ValidationError(
-                f"El cliente '{cliente.razon_social}' no tiene un vendedor asignado. "
-                "Debe asignarle un vendedor para poder emitir el remito."
-            )
 
         if not supervisor:
             raise ValidationError("El remito requiere el usuario supervisor/operador que lo emite.")

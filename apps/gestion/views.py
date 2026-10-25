@@ -328,20 +328,8 @@ class VentaDirectaRemitoView(View):
         if not cliente:
             messages.error(request, "Debe seleccionar un cliente activo válido.")
 
-        # 2. Vendedor: resuelto estrictamente del cliente en el backend
+        # 2. Vendedor: resuelto de la ficha del cliente (opcional, sin bloqueo si es nulo)
         vendedor = getattr(cliente, 'vendedor', None) if cliente else None
-        if cliente and not vendedor:
-            edit_url = reverse('gestion:cliente_editar', args=[cliente.id])
-            messages.error(
-                request,
-                format_html(
-                    "El cliente <strong>{}</strong> no tiene un vendedor asignado. "
-                    "Debe asignarle un vendedor para poder emitir el remito. "
-                    "<a href='{}' class='alert-link fw-bold' target='_blank'>Haga clic aquí para editar la ficha del cliente</a>.",
-                    cliente.razon_social,
-                    edit_url
-                )
-            )
 
         # 3. Validación de Lista de Precios (Estricta y Exclusiva: no sustituir silenciosamente)
         tipo_lista = None
@@ -492,7 +480,7 @@ class VentaDirectaRemitoView(View):
             messages.error(request, "Debe cargar al menos un producto válido para emitir el remito.")
 
         # Si hubo cualquier error, re-renderizar preservando intacta la cabecera y filas
-        if not cliente or not vendedor or not tipo_lista or errores_filas or not items_data:
+        if not cliente or not tipo_lista or errores_filas or not items_data:
             context = _get_remito_directo_context(
                 cliente_id=cliente_id,
                 tipo_lista_precio_id=tipo_lista_precio_id,

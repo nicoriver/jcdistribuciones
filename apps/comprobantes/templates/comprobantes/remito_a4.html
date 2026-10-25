@@ -113,7 +113,7 @@
             <div class="border p-2 rounded h-100">
                 <div class="small text-muted text-uppercase fw-bold">Asignación Logística y Comercial</div>
                 <div><strong>Zona:</strong> {{ cliente.zona.nombre|default:"Sin Zona" }}</div>
-                <div><strong>Vendedor:</strong> {{ remito.vendedor }}</div>
+                <div><strong>Vendedor:</strong> {{ remito.vendedor|default:"Sin vendedor" }}</div>
                 <div><strong>Emitido por:</strong> {{ remito.supervisor.username }}</div>
             </div>
         </div>

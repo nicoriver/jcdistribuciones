@@ -81,7 +81,7 @@
                             <div class="fw-bold text-dark">{{ r.cliente.razon_social }}</div>
                             <small class="text-muted">CUIT: {{ r.cliente.cuit }}</small>
                         </td>
-                        <td class="small">{{ r.vendedor.nombre|default:"Casa Central" }}</td>
+                        <td class="small">{% if r.vendedor %}{{ r.vendedor }}{% else %}<span class="text-muted">Sin vendedor</span>{% endif %}</td>
                         <td class="text-center">
                             {% if r.estado == 'EMITIDO' %}
                                 <span class="badge bg-warning text-dark"><i class="bi bi-check2-circle me-1"></i>Emitido</span>

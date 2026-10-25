@@ -39,15 +39,12 @@
         <div class="card-body">
             <div class="row g-3">
                 <!-- Cliente -->
-                <div class="col-12 col-md-4">
+                <div class="col-12 col-md-5">
                     <label class="form-label small fw-bold">Cliente *</label>
                     <select name="cliente_id" id="selectCliente" class="form-select" required>
                         <option value="">-- Seleccione un Cliente --</option>
                         {% for c in clientes %}
                         <option value="{{ c.id }}"
-                                data-vendedor-nombre="{{ c.vendedor.nombre_completo|default:'' }}"
-                                data-vendedor-id="{{ c.vendedor.id|default:'' }}"
-                                data-edit-url="{% url 'gestion:cliente_editar' c.id %}"
                                 data-lista-id="{{ c.tipo_lista_precio_id|default:'' }}"
                                 {% if selected_cliente_id == c.id %}selected{% endif %}>
                             {{ c.razon_social }} (CUIT: {{ c.cuit }})
@@ -56,23 +53,8 @@
                     </select>
                 </div>
 
-                <!-- Vendedor (Solo Lectura) -->
-                <div class="col-12 col-md-3">
-                    <label class="form-label small fw-bold">Vendedor Responsable</label>
-                    <div id="vendedorContainer" class="p-2 border rounded bg-light" style="min-height: 38px;">
-                        <div id="vendedorTexto" class="small fw-semibold text-secondary">
-                            <i class="bi bi-person me-1"></i> Seleccione un cliente
-                        </div>
-                        <div id="vendedorAlerta" class="d-none text-danger small mt-1">
-                            <i class="bi bi-exclamation-triangle-fill me-1"></i> Sin vendedor asignado.
-                            <a href="#" id="linkEditarCliente" target="_blank" class="badge bg-danger text-white text-decoration-none ms-1">Asignar</a>
-                        </div>
-                    </div>
-                    <small class="text-muted d-block" style="font-size: 0.72rem;">Resuelto automáticamente desde la ficha del cliente.</small>
-                </div>
-
                 <!-- Lista de Precios -->
-                <div class="col-12 col-md-3">
+                <div class="col-12 col-md-4">
                     <label class="form-label small fw-bold">Lista de Precios *</label>
                     <select name="tipo_lista_precio_id" id="selectListaPrecio" class="form-select" required>
                         {% if not default_lista %}
@@ -88,7 +70,7 @@
                 </div>
 
                 <!-- Fecha Comercial -->
-                <div class="col-12 col-md-2">
+                <div class="col-12 col-md-3">
                     <label class="form-label small fw-bold">Fecha Comercial *</label>
                     <input type="date" name="fecha" id="inputFecha" class="form-control" value="{{ fecha_seleccionada }}" required>
                 </div>
@@ -251,9 +233,6 @@ document.addEventListener('DOMContentLoaded', function() {
     const tbody = document.getElementById('tbodyRenglones');
     const selectCliente = document.getElementById('selectCliente');
     const selectListaPrecio = document.getElementById('selectListaPrecio');
-    const vendedorTexto = document.getElementById('vendedorTexto');
-    const vendedorAlerta = document.getElementById('vendedorAlerta');
-    const linkEditarCliente = document.getElementById('linkEditarCliente');
     const formRemito = document.getElementById('formRemitoDirecto');
     const btnEmitir = document.getElementById('btnEmitirRemito');
 
@@ -272,51 +251,7 @@ document.addEventListener('DOMContentLoaded', function() {
         return Number(Math.round(Number(num + 'e' + decimals)) + 'e-' + decimals);
     }
 
-    // 2. ACTUALIZACIÓN DEL VENDEDOR EN BASE AL CLIENTE (ESCAPE SEGURO)
-    function actualizarVendedor() {
-        const opt = selectCliente.options[selectCliente.selectedIndex];
-        vendedorTexto.replaceChildren();
-
-        if (!opt || !opt.value) {
-            const icon = document.createElement('i');
-            icon.className = 'bi bi-person me-1';
-            vendedorTexto.appendChild(icon);
-            vendedorTexto.appendChild(document.createTextNode(' Seleccione un cliente'));
-            vendedorTexto.className = 'small fw-semibold text-secondary';
-            vendedorAlerta.classList.add('d-none');
-            return;
-        }
-
-        const vNombre = opt.dataset.vendedorNombre || '';
-        const editUrl = opt.dataset.editUrl || '#';
-
-        if (vNombre.trim()) {
-            const icon = document.createElement('i');
-            icon.className = 'bi bi-person-check-fill text-success me-1';
-            const span = document.createElement('span');
-            span.className = 'text-dark';
-            span.textContent = vNombre;
-            vendedorTexto.appendChild(icon);
-            vendedorTexto.appendChild(document.createTextNode(' '));
-            vendedorTexto.appendChild(span);
-            vendedorTexto.className = 'small fw-semibold text-dark';
-            vendedorAlerta.classList.add('d-none');
-        } else {
-            const spanAlert = document.createElement('span');
-            spanAlert.className = 'text-danger fw-bold';
-            const icon = document.createElement('i');
-            icon.className = 'bi bi-exclamation-triangle-fill me-1';
-            spanAlert.appendChild(icon);
-            spanAlert.appendChild(document.createTextNode(' Sin vendedor asignado'));
-            vendedorTexto.appendChild(spanAlert);
-            vendedorAlerta.classList.remove('d-none');
-            linkEditarCliente.href = editUrl;
-        }
-    }
-    selectCliente.addEventListener('change', actualizarVendedor);
-    actualizarVendedor();
-
-    // 3. CAMBIO DE LISTA DE PRECIOS CON CONFIRMACIÓN
+    // 2. CAMBIO DE LISTA DE PRECIOS CON CONFIRMACIÓN
     selectListaPrecio.addEventListener('change', function() {
         const rowsLoaded = tbody.querySelectorAll('.fila-renglon[data-producto-id]:not([data-producto-id=""])');
         if (rowsLoaded.length > 0) {
