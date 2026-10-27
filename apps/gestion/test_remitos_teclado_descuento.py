@@ -1093,3 +1093,71 @@ class RemitoTecladoDescuentoDistribuidorTestCase(TestCase):
         with self.assertRaises(ValueError) as ctx:
             calcular_paginacion_remito_a4([MockDetalleExtremo()])
         self.assertIn("supera la altura máxima imprimible", str(ctx.exception))
+
+    # --------------------------------------------------------------------------
+    # 20. Paginación A4: ítem que supera la primera hoja pero cabe en continuación
+    # --------------------------------------------------------------------------
+    def test_paginacion_item_supera_primera_hoja_pero_cabe_en_continuacion(self):
+        """
+        Verifica que si un ítem no cabe en la primera hoja por el espacio que ocupan el
+        encabezado y los datos del cliente, pasa limpiamente a la hoja de continuación
+        donde la capacidad disponible es mayor, sin caer en bucles ni arrojar error.
+        """
+        from comprobantes.services import calcular_paginacion_remito_a4
+        import math
+
+        # Un ítem de 3420 caracteres (~57 líneas) genera una altura estimada de ~218 mm.
+        # En la primera hoja la capacidad es ~204 mm (no cabe).
+        # En la hoja subsiguiente la capacidad es ~253.6 mm (sí cabe).
+        class MockDetalleGrande:
+            codigo_historico = "GRD-001"
+            descripcion_historica = "A" * 3420
+            cantidad = 1
+            precio_unitario_historico = Decimal('100.00')
+            factor_unidades = 1
+            presentacion = None
+            presentacion_nombre = None
+            porcentaje_descuento = Decimal('0.00')
+
+        item = MockDetalleGrande()
+        paginas = calcular_paginacion_remito_a4([item], observaciones="Entrega en depósito central")
+
+        self.assertEqual(len(paginas), 2)
+        # Hoja 1: encabezado y datos de cliente, sin ítems, completa con casilleros vacíos
+        self.assertTrue(paginas[0]['is_first'])
+        self.assertFalse(paginas[0]['is_last'])
+        self.assertEqual(len(paginas[0]['items']), 0)
+        self.assertGreater(len(paginas[0]['empty_rows_range']), 0)
+        self.assertFalse(paginas[0]['show_totals'])
+
+        # Hoja 2: ítem grande ubicado en continuación con totales al pie
+        self.assertFalse(paginas[1]['is_first'])
+        self.assertTrue(paginas[1]['is_last'])
+        self.assertEqual(len(paginas[1]['items']), 1)
+        self.assertEqual(paginas[1]['items'][0].codigo_historico, "GRD-001")
+        self.assertTrue(paginas[1]['show_totals'])
+
+    # --------------------------------------------------------------------------
+    # 21. Paginación A4: observaciones excesivas controladas
+    # --------------------------------------------------------------------------
+    def test_paginacion_observaciones_excesivas_error_controlado(self):
+        """
+        Verifica que observaciones comerciales desmedidas no produzcan capacidades negativas
+        ni errores de división por cero, arrojando una excepción ValueError controlada.
+        """
+        from comprobantes.services import calcular_paginacion_remito_a4
+
+        class MockDetalleNormal:
+            codigo_historico = "NRM-001"
+            descripcion_historica = "Producto habitual"
+            cantidad = 1
+            precio_unitario_historico = Decimal('50.00')
+            factor_unidades = 1
+            presentacion = None
+            presentacion_nombre = None
+            porcentaje_descuento = Decimal('0.00')
+
+        obs_desmedidas = "Línea de observación larguísima.\n" * 150
+        with self.assertRaises(ValueError) as ctx:
+            calcular_paginacion_remito_a4([MockDetalleNormal()], observaciones=obs_desmedidas)
+        self.assertIn("observaciones comerciales es demasiado extenso", str(ctx.exception))

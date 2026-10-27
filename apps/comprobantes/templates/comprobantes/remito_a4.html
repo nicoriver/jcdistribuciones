@@ -23,11 +23,12 @@
         }
         .pagina-a4 {
             width: 190mm;
-            min-height: 277mm;
+            height: 277mm;
+            max-height: 277mm;
             position: relative;
             page-break-after: always;
             break-after: page;
-            overflow: visible;
+            overflow: hidden;
             background: #fff;
         }
         .pagina-a4:last-child {
@@ -391,9 +392,9 @@
             .pagina-a4 {
                 margin: 0 !important;
                 box-shadow: none !important;
-                min-height: 277mm !important;
-                height: auto !important;
-                overflow: visible !important;
+                height: 277mm !important;
+                max-height: 277mm !important;
+                overflow: hidden !important;
             }
         }
     </style>
