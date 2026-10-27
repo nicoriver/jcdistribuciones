@@ -48,7 +48,11 @@ class RemitoImpresionView(View):
 
         detalles = list(remito.detalles.all())
         from .services import calcular_paginacion_remito_a4
-        paginas = calcular_paginacion_remito_a4(detalles, has_observaciones=bool(remito.observaciones))
+        try:
+            paginas = calcular_paginacion_remito_a4(detalles, observaciones=remito.observaciones)
+        except ValueError as e:
+            from django.http import HttpResponseBadRequest
+            return HttpResponseBadRequest(f"Error en composición de remito A4: {e}")
         context = {
             'remito': remito,
             'cliente': remito.cliente,

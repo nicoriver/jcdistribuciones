@@ -878,3 +878,218 @@ class RemitoTecladoDescuentoDistribuidorTestCase(TestCase):
         self.assertEqual(resp_print.status_code, 200)
         self.assertContains(resp_print, '&lt;img src=x onerror=alert(1)&gt; &amp; &quot;Amigo&quot;')
         self.assertNotContains(resp_print, '<img src=x onerror=alert(1)>')
+
+    # --------------------------------------------------------------------------
+    # 16. Paginación A4: ítem con descripción extremadamente larga
+    # --------------------------------------------------------------------------
+    def test_paginacion_item_descripcion_extremadamente_larga(self):
+        """
+        Verifica que un renglón con descripción técnica extensa (800 caracteres)
+        se procese sin bucle infinito, consuma al menos un ítem por iteración,
+        aparezca exactamente una vez en orden y los totales figuren solo al pie
+        de la última página.
+        """
+        self.client.force_login(self.supervisor)
+        desc_larga = "DESCRIPCIÓN INDUSTRIAL EXTENSA - " + ("COMPONENTE QUÍMICO REFORZADO " * 25)
+        prod_largo = Producto.objects.create(
+            codigo='LNG-001',
+            nombre=desc_larga[:800],
+            categoria=self.categoria,
+            marca=self.marca,
+            alicuota_iva=Decimal('0.00'),
+            costo_base=Decimal('100.00'),
+            stock_actual=100,
+            controla_stock=True,
+            activo=True
+        )
+        Presentacion.objects.create(
+            producto=prod_largo,
+            nombre='Unidad',
+            factor_conversion=1,
+            es_default=True
+        )
+        PrecioProducto.objects.create(
+            producto=prod_largo,
+            tipo_lista=self.lista_minorista,
+            precio_neto=Decimal('150.00'),
+            precio_final=Decimal('150.00')
+        )
+
+        url = reverse('gestion:remito_directo')
+        post_data = {
+            'cliente_id': self.cliente_con_vendedor.id,
+            'tipo_lista_precio_id': self.lista_minorista.id,
+            'fecha': '2026-10-27',
+            'codigo[]': ['00100', 'LNG-001', '00200'],
+            'producto_id[]': [str(self.prod_1.id), str(prod_largo.id), str(self.prod_2.id)],
+            'cantidad[]': ['1', '2', '3'],
+            'porcentaje_descuento[]': ['0.00', '5.00', '0.00'],
+        }
+        resp_post = self.client.post(url, post_data)
+        self.assertEqual(resp_post.status_code, 302)
+
+        remito = Remito.objects.latest('id')
+        resp_print = self.client.get(reverse('comprobantes:imprimir_remito', args=[remito.id]))
+        self.assertEqual(resp_print.status_code, 200)
+
+        paginas = resp_print.context['paginas']
+        self.assertGreaterEqual(len(paginas), 1)
+
+        # Unicidad y orden estricto de cada producto
+        items_en_paginas = [item for p in paginas for item in p['items']]
+        detalles_remito = list(remito.detalles.all().order_by('id'))
+        self.assertEqual(len(items_en_paginas), len(detalles_remito))
+        for item_pag, detalle in zip(items_en_paginas, detalles_remito):
+            self.assertEqual(item_pag.id, detalle.id)
+            self.assertEqual(item_pag.codigo_historico, detalle.codigo_historico)
+
+        # Totales solo en la última página
+        for p in paginas[:-1]:
+            self.assertFalse(p['show_totals'])
+        self.assertTrue(paginas[-1]['show_totals'])
+
+    # --------------------------------------------------------------------------
+    # 17. Paginación A4: observaciones multilínea y comprobante multipágina
+    # --------------------------------------------------------------------------
+    def test_paginacion_observaciones_multilinea_y_multipagina(self):
+        """
+        Verifica que observaciones comerciales de varios renglones adapten
+        dinámicamente el espacio de la página 1 sin generar solapamientos,
+        preservando el orden y la unicidad de los productos.
+        """
+        self.client.force_login(self.supervisor)
+        obs_texto = (
+            "Instrucciones de descarga en planta:\n"
+            "1. Presentar remito original en guardia de acceso.\n"
+            "2. Vehículo habilitado con seguro de carga y EPP completo.\n"
+            "3. Descarga exclusiva en rampa B sector refrigerados.\n"
+            "4. Contactar a recepción antes de las 14:00 hs."
+        )
+
+        url = reverse('gestion:remito_directo')
+        post_data = {
+            'cliente_id': self.cliente_con_vendedor.id,
+            'tipo_lista_precio_id': self.lista_minorista.id,
+            'fecha': '2026-10-27',
+            'observaciones': obs_texto,
+            'codigo[]': ['00100', '00200'],
+            'producto_id[]': [str(self.prod_1.id), str(self.prod_2.id)],
+            'cantidad[]': ['5', '10'],
+            'porcentaje_descuento[]': ['0.00', '0.00'],
+        }
+        resp_post = self.client.post(url, post_data)
+        self.assertEqual(resp_post.status_code, 302)
+
+        remito = Remito.objects.latest('id')
+        self.assertEqual(remito.observaciones, obs_texto)
+
+        resp_print = self.client.get(reverse('comprobantes:imprimir_remito', args=[remito.id]))
+        self.assertEqual(resp_print.status_code, 200)
+        self.assertContains(resp_print, "Instrucciones de descarga en planta:")
+        self.assertContains(resp_print, "Contactar a recepción antes de las 14:00 hs.")
+
+        paginas = resp_print.context['paginas']
+        items_en_paginas = [item for p in paginas for item in p['items']]
+        detalles_remito = list(remito.detalles.all().order_by('id'))
+        self.assertEqual(len(items_en_paginas), len(detalles_remito))
+        for item_pag, detalle in zip(items_en_paginas, detalles_remito):
+            self.assertEqual(item_pag.id, detalle.id)
+
+        self.assertTrue(paginas[-1]['show_totals'])
+
+    # --------------------------------------------------------------------------
+    # 18. Paginación A4: comprobante de varias páginas (35 renglones)
+    # --------------------------------------------------------------------------
+    def test_paginacion_multipagina_35_renglones(self):
+        """
+        Verifica un remito extenso con 35 renglones:
+        - Se divide en múltiples páginas sin perder ni duplicar productos.
+        - Cada producto aparece exactamente una vez y en orden correlativo.
+        - Los totales se renderizan única y exclusivamente al pie de la última hoja.
+        """
+        self.client.force_login(self.supervisor)
+        prods_creados = []
+        for i in range(35):
+            p = Producto.objects.create(
+                codigo=f'MLT-{i+1:03d}',
+                nombre=f'Producto multipágina comercial en formato A4 renglón #{i+1:02d} descripción extendida para control de salto',
+                categoria=self.categoria,
+                marca=self.marca,
+                alicuota_iva=Decimal('0.00'),
+                costo_base=Decimal('50.00'),
+                stock_actual=100,
+                controla_stock=True,
+                activo=True
+            )
+            Presentacion.objects.create(
+                producto=p,
+                nombre='Unidad',
+                factor_conversion=1,
+                es_default=True
+            )
+            PrecioProducto.objects.create(
+                producto=p,
+                tipo_lista=self.lista_minorista,
+                precio_neto=Decimal('80.00'),
+                precio_final=Decimal('80.00')
+            )
+            prods_creados.append(p)
+
+        url = reverse('gestion:remito_directo')
+        post_data = {
+            'cliente_id': self.cliente_sin_vendedor.id,
+            'tipo_lista_precio_id': self.lista_minorista.id,
+            'fecha': '2026-10-27',
+            'codigo[]': [p.codigo for p in prods_creados],
+            'producto_id[]': [str(p.id) for p in prods_creados],
+            'cantidad[]': ['1'] * 35,
+            'porcentaje_descuento[]': ['0.00'] * 35,
+        }
+        resp_post = self.client.post(url, post_data)
+        self.assertEqual(resp_post.status_code, 302)
+
+        remito = Remito.objects.latest('id')
+        self.assertEqual(remito.detalles.count(), 35)
+
+        resp_print = self.client.get(reverse('comprobantes:imprimir_remito', args=[remito.id]))
+        self.assertEqual(resp_print.status_code, 200)
+
+        paginas = resp_print.context['paginas']
+        self.assertGreaterEqual(len(paginas), 2)
+
+        # Unicidad y orden
+        items_en_paginas = [item for p in paginas for item in p['items']]
+        detalles_remito = list(remito.detalles.all().order_by('id'))
+        self.assertEqual(len(items_en_paginas), 35)
+        for idx, (item_pag, detalle) in enumerate(zip(items_en_paginas, detalles_remito)):
+            self.assertEqual(item_pag.id, detalle.id)
+            self.assertEqual(item_pag.codigo_historico, f'MLT-{idx+1:03d}')
+
+        # Totales solo en la última página
+        for p in paginas[:-1]:
+            self.assertFalse(p['show_totals'])
+        self.assertTrue(paginas[-1]['show_totals'])
+
+    # --------------------------------------------------------------------------
+    # 19. Paginación A4: renglón más alto que el área imprimible (error controlado)
+    # --------------------------------------------------------------------------
+    def test_paginacion_item_excede_altura_maxima_error_controlado(self):
+        """
+        Verifica que si un ítem supera el área imprimible máxima de una página A4,
+        el sistema no se cuelgue en bucle infinito y responda con una salida controlada.
+        """
+        from comprobantes.services import calcular_paginacion_remito_a4
+
+        class MockDetalleExtremo:
+            codigo_historico = "ERR-EXTREMO"
+            descripcion_historica = "X" * 5000  # Más de 80 líneas esperadas
+            cantidad = 1
+            precio_unitario_historico = Decimal('100.00')
+            factor_unidades = 1
+            presentacion = None
+            presentacion_nombre = None
+            porcentaje_descuento = Decimal('0.00')
+
+        with self.assertRaises(ValueError) as ctx:
+            calcular_paginacion_remito_a4([MockDetalleExtremo()])
+        self.assertIn("supera la altura máxima imprimible", str(ctx.exception))

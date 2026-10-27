@@ -469,31 +469,33 @@ class RemitoService:
 ComprobanteService = RemitoService
 
 
-def calcular_paginacion_remito_a4(detalles, has_observaciones=False):
+def calcular_paginacion_remito_a4(detalles, observaciones=""):
     """
-    Calcula la composición de páginas para impresión A4 comercial (210 x 297 mm):
-    - Márgenes físicos: 10 mm en todos los bordes.
-    - Área útil de página: 190 mm de ancho x 277 mm de alto.
-    - Borde inferior del bloque de totales situado a 10 mm del borde inferior físico (coordenada y=287mm).
-    - Grilla termina exactamente 5 mm antes del bloque de totales (y ~ 255.9mm con descuento, 260.4mm sin descuento).
-    - Mide con precisión la altura consumida por cada renglón de producto (según caracteres, bultos y bonificaciones).
-    - Completa con casilleros vacíos el espacio restante en cada página hasta 5 mm antes de los totales.
-    - En multipágina, distribuye renglones sin superposición y muestra totales una sola vez al pie de la última hoja.
+    Calcula la composición y paginación para la impresión A4 comercial (210 x 297 mm):
+    - Márgenes físicos: 10 mm en todos los bordes (área útil: 190 mm de ancho x 277 mm de alto).
+    - Cota vertical de totales: anclado al pie (coordenada y=287 mm, a 10 mm del borde físico).
+    - Terminación de grilla: finaliza a ~5 mm antes del bloque de totales.
+    - Estimación de alturas: se calcula de forma analítica según la cantidad de caracteres,
+      líneas de texto esperadas, empaques y bonificaciones; no constituye una medición en
+      el motor de renderizado del navegador.
+    - Robustez: garantiza consumir al menos un ítem por iteración sin bucles infinitos.
+    - Detección de desbordes: ítems que superen el área máxima imprimible de una página A4
+      completa arrojan una excepción ValueError controlada.
     """
     import math
 
-    # Dimensiones reales medidas en el motor de renderizado (CSS A4 96dpi)
-    ROW_EMPTY_H = 5.40  # Altura efectiva de cada fila vacía con bordes colapsados
-    THEAD_H = 6.61      # Altura del encabezado de columnas (25px a 96dpi)
+    # Constantes geométricas calibradas para A4 (estimadas para tipografía Arial a 96 dpi)
+    ROW_EMPTY_H = 5.40  # Altura de cada fila vacía con bordes colapsados
+    THEAD_H = 6.61      # Altura del encabezado de columnas (thead)
 
     def estimate_item_height_mm(item):
         """
-        Calcula la altura real en mm que consume un renglón de producto en la grilla:
-        - Fila base: 5.29 mm (20px).
-        - Columna de descripción (48% de ancho = 91.2 mm): aloja ~60 caracteres por línea.
-        - Líneas adicionales de descripción: +3.8 mm cada una.
+        Estima la altura aproximada en mm que ocupará un renglón según sus caracteres:
+        - Fila base: 5.29 mm.
+        - Líneas adicionales de descripción (estimando ~60 caracteres por línea en la columna del 48%): +3.8 mm cada una.
         - Detalle de presentación (pack/caja): +3.6 mm.
         - Detalle de bonificación / descuento: +3.6 mm.
+        Nota: cálculo analítico por caracteres, no medición directa del navegador.
         """
         desc = getattr(item, 'descripcion_historica', '') or ''
         chars = len(desc)
@@ -510,34 +512,54 @@ def calcular_paginacion_remito_a4(detalles, has_observaciones=False):
             h += 3.6
         return h
 
+    # Normalización del parámetro de observaciones
+    if isinstance(observaciones, bool):
+        has_obs = observaciones
+        obs_text = ""
+    else:
+        obs_text = str(observaciones or "")
+        has_obs = bool(obs_text.strip())
+
+    # Estimación de altura de observaciones bajo el bloque de cliente en Página 1
+    h_obs = 0.0
+    if has_obs:
+        obs_lines = sum(max(1, math.ceil(len(line) / 90.0)) for line in obs_text.splitlines()) if obs_text else 1
+        h_obs = 4.8 + (max(1, obs_lines) - 1) * 3.5 + 2.5  # Alto base + líneas extra + margen inferior
+
+    H_TOP_P1 = 52.3 + h_obs
+    H_TOP_SUBSEQUENT = 7.8  # Encabezado compacto continuación (5.3mm + margen 2.5mm)
+
     has_discount = any((getattr(item, 'porcentaje_descuento', 0) or 0) > 0 for item in detalles)
 
-    # Altura de los bloques superiores previos a la grilla en Página 1
-    # Encabezado (27.0mm) + margen (3.0mm) + Cliente (19.8mm) + margen (2.5mm) = 52.3mm
-    H_TOP_P1 = 52.3
-    if has_observaciones:
-        H_TOP_P1 += 7.3  # Observaciones bajo cliente (4.8mm + margen 2.5mm)
-
     # Cota vertical máxima a la que debe llegar la grilla:
-    # El bloque de totales (bottom: 0) tiene top en 260.9mm (con descuento) o 265.4mm (sin descuento).
-    # Requisito estricto: terminar exactamente 5 mm antes de los totales (~256.0mm / 260.5mm).
+    # Bloque de totales tiene top en 260.9mm (con descuento) o 265.4mm (sin descuento).
+    # Requisito: grilla termina ~5 mm antes del bloque de totales.
     Y_GRID_MAX_LAST = 256.2 if has_discount else 260.8
     Y_GRID_MAX_INTER = 268.0  # En páginas intermedias la grilla se extiende hasta 268 mm
 
-    H_AVAIL_P1_LAST = Y_GRID_MAX_LAST - (H_TOP_P1 + THEAD_H)
-    H_AVAIL_P1_INTER = Y_GRID_MAX_INTER - (H_TOP_P1 + THEAD_H)
+    MAX_PAGE_ITEM_H = Y_GRID_MAX_INTER - (H_TOP_SUBSEQUENT + THEAD_H)
 
     items_list = list(detalles)
-    items_with_h = [(item, estimate_item_height_mm(item)) for item in items_list]
+    items_with_h = []
+    for item in items_list:
+        h = estimate_item_height_mm(item)
+        if h > MAX_PAGE_ITEM_H:
+            cod = getattr(item, 'codigo_historico', 'S/C')
+            raise ValueError(
+                f"El ítem '{cod}' supera la altura máxima imprimible de una página A4 "
+                f"(estimada en {h:.1f} mm para una capacidad de {MAX_PAGE_ITEM_H:.1f} mm)."
+            )
+        items_with_h.append((item, h))
+
+    total_items = len(items_with_h)
     total_items_h = sum(h for _, h in items_with_h)
+    H_AVAIL_P1_LAST = Y_GRID_MAX_LAST - (H_TOP_P1 + THEAD_H)
 
-    pages = []
-
-    # Caso 1: comprobante mono-página (todos los renglones entran con totales en hoja 1)
+    # Caso 1: Comprobante mono-página (todos los renglones entran con totales en hoja 1)
     if total_items_h <= H_AVAIL_P1_LAST:
         rem_h = H_AVAIL_P1_LAST - total_items_h
         empty_rows = max(0, int(round(rem_h / ROW_EMPTY_H)))
-        pages.append({
+        return [{
             'page_num': 1,
             'is_first': True,
             'is_last': True,
@@ -545,93 +567,94 @@ def calcular_paginacion_remito_a4(detalles, has_observaciones=False):
             'empty_rows_range': range(empty_rows),
             'show_header': True,
             'show_client': True,
-            'show_obs': has_observaciones,
+            'show_obs': has_obs,
             'show_totals': True,
-        })
-        return pages
+        }]
 
-    # Caso 2: comprobante multipágina
-    # Distribuir renglones equilibradamente entre páginas
-    H_TOP_SUBSEQUENT = 7.8  # Encabezado compacto continuación (5.3mm + margen 2.5mm)
-    H_AVAIL_SUB_LAST = Y_GRID_MAX_LAST - (H_TOP_SUBSEQUENT + THEAD_H)
-    H_AVAIL_SUB_INTER = Y_GRID_MAX_INTER - (H_TOP_SUBSEQUENT + THEAD_H)
-
-    # Estimación de páginas requeridas para distribuir equilibradamente
-    num_pages_est = max(2, math.ceil(total_items_h / min(H_AVAIL_P1_INTER, H_AVAIL_SUB_LAST)))
-    target_h_p1 = min(H_AVAIL_P1_INTER, max(95.0, total_items_h / num_pages_est))
-
-    p1_items = []
-    accum_h = 0.0
+    # Caso 2: Comprobante multipágina
+    pages = []
+    current_page = 1
     idx = 0
-    while idx < len(items_with_h):
-        item, h = items_with_h[idx]
-        if accum_h + h <= target_h_p1:
-            p1_items.append(item)
-            accum_h += h
-            idx += 1
-        else:
-            break
 
-    rem_h_p1 = H_AVAIL_P1_INTER - accum_h
-    empty_p1 = max(0, int(round(rem_h_p1 / ROW_EMPTY_H)))
-    pages.append({
-        'page_num': 1,
-        'is_first': True,
-        'is_last': False,
-        'items': p1_items,
-        'empty_rows_range': range(empty_p1),
-        'show_header': True,
-        'show_client': True,
-        'show_obs': has_observaciones,
-        'show_totals': False,
-    })
+    while idx < total_items:
+        h_top = H_TOP_P1 if current_page == 1 else H_TOP_SUBSEQUENT
+        max_h_with_totals = Y_GRID_MAX_LAST - (h_top + THEAD_H)
+        max_h_inter = Y_GRID_MAX_INTER - (h_top + THEAD_H)
 
-    current_page = 2
-    while idx < len(items_with_h):
         remaining_h = sum(h for _, h in items_with_h[idx:])
-        if remaining_h <= H_AVAIL_SUB_LAST:
-            # Última página con totales
+
+        # Si todos los ítems restantes entran en esta página con totales, es la última
+        if remaining_h <= max_h_with_totals:
             last_items = [item for item, _ in items_with_h[idx:]]
-            rem_h = H_AVAIL_SUB_LAST - remaining_h
+            idx = total_items
+            rem_h = max_h_with_totals - remaining_h
             empty_rows = max(0, int(round(rem_h / ROW_EMPTY_H)))
             pages.append({
                 'page_num': current_page,
-                'is_first': False,
+                'is_first': (current_page == 1),
                 'is_last': True,
                 'items': last_items,
                 'empty_rows_range': range(empty_rows),
-                'show_header': False,
-                'show_client': False,
-                'show_obs': False,
+                'show_header': (current_page == 1),
+                'show_client': (current_page == 1),
+                'show_obs': (current_page == 1 and has_obs),
                 'show_totals': True,
             })
             break
-        else:
-            # Página intermedia subsiguiente
-            target_h_sub = min(H_AVAIL_SUB_INTER, max(95.0, remaining_h / 2.0))
-            p_items = []
-            accum_h = 0.0
-            while idx < len(items_with_h):
-                item, h = items_with_h[idx]
-                if accum_h + h <= target_h_sub:
-                    p_items.append(item)
+
+        # Página intermedia sin totales
+        remaining_pages_est = max(2, math.ceil(remaining_h / max_h_inter))
+        target_h = min(max_h_inter, max(95.0, remaining_h / remaining_pages_est))
+
+        page_items = []
+        accum_h = 0.0
+        while idx < total_items:
+            item, h = items_with_h[idx]
+            # Garantizar que cada página consuma al menos un ítem
+            if len(page_items) == 0:
+                page_items.append(item)
+                accum_h += h
+                idx += 1
+                if accum_h >= target_h:
+                    break
+            else:
+                if accum_h + h <= target_h:
+                    page_items.append(item)
                     accum_h += h
                     idx += 1
                 else:
                     break
-            rem_h = H_AVAIL_SUB_INTER - accum_h
-            empty_rows = max(0, int(round(rem_h / ROW_EMPTY_H)))
-            pages.append({
-                'page_num': current_page,
-                'is_first': False,
-                'is_last': False,
-                'items': p_items,
-                'empty_rows_range': range(empty_rows),
-                'show_header': False,
-                'show_client': False,
-                'show_obs': False,
-                'show_totals': False,
-            })
-            current_page += 1
+
+        rem_h = max_h_inter - accum_h
+        empty_rows = max(0, int(round(rem_h / ROW_EMPTY_H)))
+        pages.append({
+            'page_num': current_page,
+            'is_first': (current_page == 1),
+            'is_last': False,
+            'items': page_items,
+            'empty_rows_range': range(empty_rows),
+            'show_header': (current_page == 1),
+            'show_client': (current_page == 1),
+            'show_obs': (current_page == 1 and has_obs),
+            'show_totals': False,
+        })
+        current_page += 1
+
+    # Salvaguarda: si todos los ítems fueron asignados en páginas intermedias, agregar página de cierre con totales
+    if not any(p['show_totals'] for p in pages):
+        h_top = H_TOP_SUBSEQUENT
+        max_h_last = Y_GRID_MAX_LAST - (h_top + THEAD_H)
+        empty_rows = max(0, int(round(max_h_last / ROW_EMPTY_H)))
+        pages.append({
+            'page_num': len(pages) + 1,
+            'is_first': False,
+            'is_last': True,
+            'items': [],
+            'empty_rows_range': range(empty_rows),
+            'show_header': False,
+            'show_client': False,
+            'show_obs': False,
+            'show_totals': True,
+        })
 
     return pages
