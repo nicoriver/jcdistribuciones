@@ -404,10 +404,12 @@ class RemitoTecladoDescuentoDistribuidorTestCase(TestCase):
         self.assertEqual(remito.total_descuento, Decimal('200.00'))
         self.assertEqual(remito.monto_total, Decimal('1800.00'))
 
-        # Vista de impresión A4 funciona con vendedor vacío
+        # Vista de impresión A4 funciona con vendedor vacío y no muestra datos de vendedor ni firmas
         resp_print = self.client.get(reverse('comprobantes:imprimir_remito', args=[remito.id]))
         self.assertEqual(resp_print.status_code, 200)
-        self.assertContains(resp_print, "Sin vendedor")
+        self.assertNotContains(resp_print, "Sin vendedor")
+        self.assertNotContains(resp_print, "Vendedor:")
+        self.assertNotContains(resp_print, "Firma Recepción Conforme")
         self.assertContains(resp_print, "1800,00")
 
     # --------------------------------------------------------------------------

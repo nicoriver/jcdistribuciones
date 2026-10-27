@@ -46,12 +46,15 @@ class RemitoImpresionView(View):
             id=target_id
         )
 
-        detalles = remito.detalles.all()
+        detalles = list(remito.detalles.all())
+        from .services import calcular_paginacion_remito_a4
+        paginas = calcular_paginacion_remito_a4(detalles, has_observaciones=bool(remito.observaciones))
         context = {
             'remito': remito,
             'cliente': remito.cliente,
             'detalles': detalles,
             'items': detalles,
+            'paginas': paginas,
         }
         return render(request, self.template_name, context)
 
