@@ -485,7 +485,7 @@ def calcular_paginacion_remito_a4(detalles, observaciones=""):
     import math
 
     # Constantes geométricas calibradas para A4 (estimadas para tipografía Arial a 96 dpi)
-    ROW_EMPTY_H = 5.40  # Altura de cada fila vacía con bordes colapsados
+    ROW_EMPTY_H = 5.43  # Altura de cada fila vacía con bordes colapsados (calibrada con renderizado)
     THEAD_H = 6.61      # Altura del encabezado de columnas (thead)
 
     def estimate_item_height_mm(item):
@@ -539,9 +539,11 @@ def calcular_paginacion_remito_a4(detalles, observaciones=""):
     has_discount = any((getattr(item, 'porcentaje_descuento', 0) or 0) > 0 for item in detalles)
 
     # Cota vertical máxima a la que debe llegar la grilla:
-    # Bloque de totales tiene top en 260.9mm (con descuento) o 265.4mm (sin descuento).
-    # Requisito: grilla termina ~5 mm antes del bloque de totales.
-    Y_GRID_MAX_LAST = 256.2 if has_discount else 260.8
+    # Bloque de totales tiene top en 260.9mm (con descuento) o 265.5mm (sin descuento).
+    # Descontamos previamente la separación requerida de 5 mm y el espesor de bordes (0.8 mm).
+    Y_TOTALS_TOP = 260.9 if has_discount else 265.5
+    SEPARACION_TOTALES = 5.0 + 0.8
+    Y_GRID_MAX_LAST = Y_TOTALS_TOP - SEPARACION_TOTALES  # 255.1 mm (con desc) o 259.7 mm (sin desc)
     Y_GRID_MAX_INTER = 268.0  # En páginas intermedias la grilla se extiende hasta 268 mm
 
     CAP_P1_LAST = max(0.0, Y_GRID_MAX_LAST - (H_TOP_P1 + THEAD_H))
@@ -570,7 +572,7 @@ def calcular_paginacion_remito_a4(detalles, observaciones=""):
     # Caso 1: Comprobante mono-página (todos los renglones entran con totales en hoja 1)
     if total_items_h <= CAP_P1_LAST:
         rem_h = CAP_P1_LAST - total_items_h
-        empty_rows = max(0, int(round(rem_h / ROW_EMPTY_H)))
+        empty_rows = max(0, math.floor(rem_h / ROW_EMPTY_H))
         return [{
             'page_num': 1,
             'is_first': True,
@@ -600,7 +602,7 @@ def calcular_paginacion_remito_a4(detalles, observaciones=""):
             last_items = [item for item, _ in items_with_h[idx:]]
             idx = total_items
             rem_h = cap_last - remaining_h
-            empty_rows = max(0, int(round(rem_h / ROW_EMPTY_H)))
+            empty_rows = max(0, math.floor(rem_h / ROW_EMPTY_H))
             pages.append({
                 'page_num': current_page,
                 'is_first': is_first,
@@ -614,11 +616,8 @@ def calcular_paginacion_remito_a4(detalles, observaciones=""):
             })
             break
 
-        # Página intermedia sin totales
-        divisor = max(50.0, cap_inter)
-        rem_pages_est = max(2, math.ceil(remaining_h / divisor))
-        target_h = min(cap_inter, max(95.0, remaining_h / rem_pages_est))
-
+        # Página intermedia sin totales: llenado voraz aprovechando toda la capacidad física
+        # disponible de la hoja (cap_inter), sin reparto proporcional ni target_h.
         page_items = []
         accum_h = 0.0
 
@@ -629,8 +628,6 @@ def calcular_paginacion_remito_a4(detalles, observaciones=""):
                     page_items.append(item)
                     accum_h += h
                     idx += 1
-                    if accum_h >= target_h:
-                        break
                 else:
                     if is_first:
                         # El ítem supera la capacidad de la primera hoja por encabezados/obs,
@@ -644,15 +641,16 @@ def calcular_paginacion_remito_a4(detalles, observaciones=""):
                             f"(estimada en {h:.1f} mm para una capacidad de {cap_inter:.1f} mm)."
                         )
             else:
-                if (accum_h + h <= target_h) and (accum_h + h <= cap_inter):
+                if accum_h + h <= cap_inter:
                     page_items.append(item)
                     accum_h += h
                     idx += 1
                 else:
+                    # El próximo renglón completo ya no cabe en esta hoja: pasar a la siguiente
                     break
 
         rem_h = cap_inter - accum_h
-        empty_rows = max(0, int(round(rem_h / ROW_EMPTY_H)))
+        empty_rows = max(0, math.floor(rem_h / ROW_EMPTY_H))
         pages.append({
             'page_num': current_page,
             'is_first': is_first,
@@ -669,7 +667,7 @@ def calcular_paginacion_remito_a4(detalles, observaciones=""):
     # Salvaguarda: si todos los ítems fueron asignados en páginas intermedias, agregar página de cierre con totales
     if not any(p['show_totals'] for p in pages):
         max_h_last = CAP_SUB_LAST
-        empty_rows = max(0, int(round(max_h_last / ROW_EMPTY_H)))
+        empty_rows = max(0, math.floor(max_h_last / ROW_EMPTY_H))
         pages.append({
             'page_num': len(pages) + 1,
             'is_first': False,

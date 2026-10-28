@@ -1070,6 +1070,28 @@ class RemitoTecladoDescuentoDistribuidorTestCase(TestCase):
             self.assertFalse(p['show_totals'])
         self.assertTrue(paginas[-1]['show_totals'])
 
+        # Verificar llenado voraz: la primera hoja aprovecha toda su capacidad disponible
+        # y ningún producto de la segunda hoja hubiera cabido al final de la primera hoja
+        import math
+        def est_h(d):
+            chars = len(d.descripcion_historica or '')
+            lines = max(1, math.ceil(chars / 60.0))
+            h = 5.29 + (lines - 1) * 3.8
+            if (d.porcentaje_descuento or 0) > 0:
+                h += 3.6
+            return h
+
+        accum_h_p1 = sum(est_h(it) for it in paginas[0]['items'])
+        cap_p1_inter = 268.0 - (52.3 + 6.61)  # 209.09 mm sin observaciones
+        espacio_libre_p1 = cap_p1_inter - accum_h_p1
+        altura_primer_item_p2 = est_h(paginas[1]['items'][0])
+        self.assertGreater(
+            altura_primer_item_p2,
+            espacio_libre_p1,
+            "El primer ítem de la segunda hoja no debía caber en el espacio libre restante de la primera hoja."
+        )
+        self.assertGreater(len(paginas[0]['items']), len(paginas[1]['items']))
+
     # --------------------------------------------------------------------------
     # 19. Paginación A4: renglón más alto que el área imprimible (error controlado)
     # --------------------------------------------------------------------------
