@@ -884,16 +884,45 @@ class RemitoTecladoDescuentoDistribuidorTestCase(TestCase):
     # --------------------------------------------------------------------------
     def test_paginacion_item_descripcion_extremadamente_larga(self):
         """
-        Verifica que un renglón con descripción técnica extensa (800 caracteres)
-        se procese sin bucle infinito, consuma al menos un ítem por iteración,
-        aparezca exactamente una vez en orden y los totales figuren solo al pie
-        de la última página.
+        Verifica el manejo de ítems con descripciones extensas:
+        1. Prueba analítica directa en calcular_paginacion_remito_a4 con objeto de prueba
+           de descripción extensa (800 caracteres), sin persistir valores que violen
+           las restricciones del modelo (VARCHAR 150).
+        2. Prueba de integración de emisión e impresión completa de remito directo
+           utilizando un producto con nombre válido en el límite de 150 caracteres.
         """
+        from comprobantes.services import calcular_paginacion_remito_a4
+
+        # 1. Prueba directa en calcular_paginacion_remito_a4 con mock de 800 caracteres
+        desc_extrema_base = "DESCRIPCIÓN INDUSTRIAL EXTENSA - " + ("COMPONENTE QUÍMICO REFORZADO " * 35)
+        desc_extrema_800 = desc_extrema_base[:800]
+        self.assertEqual(len(desc_extrema_800), 800)
+
+        class MockDetalle800:
+            codigo_historico = "LNG-800"
+            descripcion_historica = desc_extrema_800[:800]
+            cantidad = 1
+            precio_unitario_historico = Decimal('150.00')
+            factor_unidades = 1
+            presentacion = None
+            presentacion_nombre = None
+            porcentaje_descuento = Decimal('0.00')
+
+        paginas_mock = calcular_paginacion_remito_a4([MockDetalle800()])
+        self.assertGreaterEqual(len(paginas_mock), 1)
+        items_mock = [it for p in paginas_mock for it in p['items']]
+        self.assertEqual(len(items_mock), 1)
+        self.assertEqual(items_mock[0].codigo_historico, "LNG-800")
+        self.assertTrue(paginas_mock[-1]['show_totals'])
+
+        # 2. Prueba de integración de emisión e impresión con nombre válido (<= 150 caracteres)
         self.client.force_login(self.supervisor)
-        desc_larga = "DESCRIPCIÓN INDUSTRIAL EXTENSA - " + ("COMPONENTE QUÍMICO REFORZADO " * 25)
+        desc_valida_150 = desc_extrema_800[:150]
+        self.assertEqual(len(desc_valida_150), 150)
+
         prod_largo = Producto.objects.create(
             codigo='LNG-001',
-            nombre=desc_larga[:800],
+            nombre=desc_valida_150,
             categoria=self.categoria,
             marca=self.marca,
             alicuota_iva=Decimal('0.00'),
